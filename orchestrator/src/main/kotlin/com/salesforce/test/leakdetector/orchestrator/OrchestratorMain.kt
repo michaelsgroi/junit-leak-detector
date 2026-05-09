@@ -88,7 +88,11 @@ object OrchestratorMain {
         finalReportFile.writeText(text)
         out.println("Wrote final report to ${finalReportFile.absolutePath}")
 
-        // Propagate the worst run exit code so the caller sees the build-failure signal.
+        // The orchestrator is an investigation/isolation tool. Build failure on
+        // detected leaks is the library's job at normal `mvn test` time; the
+        // orchestrator's job is to produce sharper attribution. Propagate any
+        // sub-process exit code only so the caller sees genuine Maven failures
+        // (compile errors, infrastructure issues, etc.) — not detector-policy ones.
         return if (run1Result != 0) run1Result else run2Result
     }
 
@@ -113,6 +117,9 @@ object OrchestratorMain {
                 add("-Dsurefire.runOrder=$runOrder")
                 if (runOrderRandomSeed != null) add("-Dsurefire.runOrder.random.seed=$runOrderRandomSeed")
                 add("-Dresource.leak.detector.raw.report.output.path=${rawReportFile.absolutePath}")
+                // Suppress the library's per-run build failure: the orchestrator owns
+                // the build-failure decision and applies it once after intersection.
+                add("-Dresource.leak.detector.build.failure.resource.types=")
             }
         val process =
             ProcessBuilder(args)

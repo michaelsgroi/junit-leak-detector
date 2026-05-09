@@ -296,9 +296,15 @@ Single-run mode (`--runs 1`) is supported for cases where users just want the or
 
 **Caveat on intersection across runs**: candidate sets are intersected by `(resourceType, resourceKey)`. For resource types whose identity is stable across JVM runs (system properties, env vars, DDB tables, memory) intersection narrows attribution as intended. For thread IDs and ephemeral port numbers — both of which differ per JVM — the current intersection-by-identity logic effectively drops these leaks from the final intersected report. Improving this (e.g., intersecting by candidate-class-set per leak rather than by exact resource identity) is a known follow-up.
 
-### Build failure with double-run mode
+### Build failure and the orchestrator
 
-When `runs=2` and `build.failure.enabled=true`, **both runs always execute**. The build-failure decision is deferred to C3 after it has intersected candidate sets across both runs. Run 1 never short-circuits the suite, even if it observes leaks — the second run is needed for the sharper attribution that justifies failing the build in the first place.
+Build failure on detected leaks is **the library's job**, applied at normal `mvn test` time by the inline `AttributionRunner` based on `resource.leak.detector.build.failure.resource.types`. That's the CI gate.
+
+The orchestrator is a separate use case — investigation/isolation. Someone runs it manually (or from a CI investigation job) to get sharper attribution after a CI build has already failed or to proactively analyze a suite. **The orchestrator does not impose its own build-failure decision**; it produces two raw reports and a final intersected leak-report.txt and exits 0 on a clean Maven run.
+
+To prevent the library's per-run trigger from short-circuiting run 1 before run 2 gets a chance to run, the orchestrator passes `-Dresource.leak.detector.build.failure.resource.types=` (empty) on each sub-process `mvn test` invocation. Whatever the consuming project has configured for build failure is overridden to empty for these orchestrator-driven runs. The orchestrator does not read or honor `build.failure.resource.types` from its own JVM either.
+
+If a user wants build-failure semantics, they run the library directly via `mvn test` — the orchestrator is the wrong tool for that job.
 
 ## C3 — Attribution
 

@@ -71,10 +71,11 @@ An optional AI-assisted "skill" layer may sit on top of C3, applying name heuris
 - **REQ-2.3.2**: The raw report format MUST contain enough information (per-resource appearance times, per-test-class lifecycle intervals) to compute candidate sets without re-instrumenting the suite.
 
 #### 2.4 Differential ordering (optional second run)
-- **REQ-2.4.1**: The component MUST support an optional "double run" mode. When enabled, the suite is executed twice with different test orderings; the attribution component intersects the candidate sets across runs to produce sharper attribution.
-- **REQ-2.4.2**: Different orderings MUST be produced via Surefire's built-in `runOrder` configuration, not via custom shuffling code. The first run uses the project's normal `runOrder` (typically `alphabetical`). The second run sets `-Dsurefire.runOrder=random` with `-Dsurefire.runOrderRandomSeed=<seed>`.
-- **REQ-2.4.3**: The seed used for the second run MUST be recorded in the raw report so the run is reproducible.
-- **REQ-2.4.4**: Default mode is single-run (one execution, wider candidate sets). Double-run mode is opt-in.
+- **REQ-2.4.1**: The component MUST support an optional "double run" mode driven by an orchestrator. When enabled, the suite is executed twice with different test orderings; the attribution component intersects the candidate sets across runs to produce sharper attribution.
+- **REQ-2.4.2**: Different orderings MUST be produced via Surefire's built-in `runOrder` configuration, not via custom shuffling code. The first run uses `runOrder=alphabetical`. The second run uses `runOrder=random` with a recorded seed.
+- **REQ-2.4.3**: The seed used for the second run MUST be recorded so the run is reproducible (default: current time millis; overridable via the orchestrator's `--seed` flag).
+- **REQ-2.4.4**: Default invocation is single-run (a normal `mvn test`, wider candidate sets). Double-run mode is opt-in by invoking the orchestrator.
+- **REQ-2.4.5**: The orchestrator is an investigation/isolation tool. It does NOT impose its own build-failure decision: it produces sharper attribution and exits 0 on a clean Maven run. Build-failure-on-leak is the library's responsibility during normal `mvn test` (see REQ-4.2).
 
 ### 3. Test-isolation Prerequisites
 
@@ -93,10 +94,11 @@ Reliable detection requires that all test classes share one JVM for the duration
 - **REQ-4.1.3**: When a configured monitor requires a runtime dependency that is not on the consuming project's classpath, the component MUST fail fast at startup with a clear error message naming the missing dependency and the monitor that requires it. The component MUST NOT silently disable the monitor.
 
 #### 4.2 Build Failure on Leak Detection
-- **REQ-4.2.1**: Build failure on leak detection MUST be controlled by a configurable feature flag (default: disabled) that acts as a master switch.
-- **REQ-4.2.2**: The component MUST support a separate configuration parameter that specifies a list of resource types that should cause the build to fail when leaks are detected.
-- **REQ-4.2.3**: When the feature flag is enabled and leaks are detected for resource types in the build-failure list, the component MUST cause the build to fail.
-- **REQ-4.2.4**: When the feature flag is disabled, or when leaks are detected for resource types not in the build-failure list, the component MUST only report leaks without failing the build.
+- **REQ-4.2.1**: Build failure on leak detection is **the library's responsibility**, applied during normal `mvn test` invocations by the inline attribution path. The orchestrator (double-run mode) does NOT impose its own build-failure decision; it is an investigation/isolation tool that produces sharper attribution and exits 0 on a clean Maven run.
+- **REQ-4.2.2**: The library MUST support a configuration parameter (`build.failure.resource.types`) that specifies a comma-separated list of resource types that should cause the build to fail when leaks are detected. Empty list = build failure disabled. Non-empty list = build failure enabled for the named types.
+- **REQ-4.2.3**: When `build.failure.resource.types` is non-empty and leaks are detected for any of those types, the library MUST cause the build to fail at the end of the test run.
+- **REQ-4.2.4**: When `build.failure.resource.types` is empty, or when leaks are detected only for types not in the list, the library MUST report leaks without failing the build.
+- **REQ-4.2.5**: The orchestrator MUST suppress the library's per-run build-failure trigger by passing `-Dresource.leak.detector.build.failure.resource.types=` (empty) on each sub-process `mvn test` invocation. This prevents run 1 from short-circuiting before run 2 can produce its raw report. Whatever the consuming project has configured is overridden to empty for these orchestrator-driven runs.
 
 ### 5. Non-functional Requirements
 
