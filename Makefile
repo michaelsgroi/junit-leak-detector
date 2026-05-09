@@ -1,8 +1,19 @@
 SHELL := /bin/bash
 
-.PHONY: all build test test-it clean
+.PHONY: all build test test-it checks spotless-check cpd-check clean
 
 all: test
+
+# Run all static checks: spotless (Kotlin formatting) + CPD (copy-paste detection).
+checks: spotless-check cpd-check
+
+spotless-check:
+	@echo "==> Spotless check (ktlint)..."
+	mvn -o spotless:check
+
+cpd-check:
+	@echo "==> CPD check (copy-paste detection)..."
+	mvn -o pmd:cpd-check
 
 # Build the library, run library unit tests, install to local Maven repo,
 # then run all integration tests.
