@@ -20,6 +20,11 @@
             <version>${kotlin.version}</version>
         </dependency>
         <dependency>
+            <groupId>com.salesforce.test</groupId>
+            <artifactId>junit-leak-detector-attribution</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.junit.platform</groupId>
             <artifactId>junit-platform-launcher</artifactId>
             <version>${junit.platform.version}</version>

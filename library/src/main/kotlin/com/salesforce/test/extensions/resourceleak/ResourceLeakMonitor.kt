@@ -41,13 +41,11 @@ class ResourceLeakMonitor : TestExecutionListener {
     override fun testPlanExecutionFinished(testPlan: TestPlan) {
         registry?.snapshotAll(kind = SnapshotKind.FINAL)
         SharedMonitorRegistry.clear()
-        val rawPath = Configuration.instance.rawReportOutputPath
         rawReportWriter?.closeWith(
             finishedAt = clock.instant(),
             lifecycles = ResourceState.instance.getAllTestClassLifecycles(),
         )
-        val textReportFile = File(rawPath).resolveSibling("leak-report.txt")
-        ResourceLeakReporter(textOutputFile = textReportFile).report()
+        AttributionRunner().runInline()
     }
 }
 
