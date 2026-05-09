@@ -66,4 +66,15 @@ class BasicScenarioIT {
             "expected fail-fast error naming missing dependency",
         )
     }
+
+    @Test
+    fun `multi-fork profile emits the multiple-forks WARN`() {
+        val result = MavenScenarioRunner.run(module = module, profiles = listOf("multi-fork"))
+
+        assertTrue(result.succeeded, "expected BUILD SUCCESS, output tail:\n${result.output.takeLast(2000)}")
+        assertTrue(
+            result.containsLine("Multiple forks detected"),
+            "expected 'Multiple forks detected' WARN log line",
+        )
+    }
 }

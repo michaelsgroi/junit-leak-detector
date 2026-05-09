@@ -111,6 +111,27 @@
         </profile>
         <profile>
             <!--
+                Multi-fork scenario: configure Surefire to use multiple non-reused JVMs.
+                Run: mvn test -Pmulti-fork
+                Expected: BUILD SUCCESS; the runtime fork-detector logs a WARN about
+                "Multiple forks detected" because forkCount=2 with reuseForks=false means
+                each test class gets its own JVM, defeating cross-class leak detection.
+            -->
+            <id>multi-fork</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <forkCount>2</forkCount>
+                            <reuseForks>false</reuseForks>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <!--
                 Fail-fast scenario: enables `ddbtables` without adding the AWS SDK to the classpath.
                 The detector should fail at startup with a clear error naming the missing dep.
                 Run: mvn test -Pverify-failfast

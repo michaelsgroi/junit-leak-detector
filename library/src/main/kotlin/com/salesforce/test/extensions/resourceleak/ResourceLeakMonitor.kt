@@ -15,7 +15,9 @@ class ResourceLeakMonitor : TestExecutionListener {
     override fun testPlanExecutionStarted(testPlan: TestPlan) {
         try {
             val configuration = Configuration.instance
-            val writer = RawReportWriter(File(configuration.rawReportOutputPath))
+            val rawReportFile = File(configuration.rawReportOutputPath)
+            ForkDetector(markerDirectory = rawReportFile.resolveSibling("forks")).checkAndRecordFork()
+            val writer = RawReportWriter(rawReportFile)
             rawReportWriter = writer
             val r = MonitorRegistry(rawReportWriter = writer)
             registry = r
