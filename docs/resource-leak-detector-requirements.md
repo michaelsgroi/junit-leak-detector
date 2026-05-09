@@ -75,7 +75,8 @@ An optional AI-assisted "skill" layer may sit on top of C3, applying name heuris
 - **REQ-2.4.2**: Different orderings MUST be produced via Surefire's built-in `runOrder` configuration, not via custom shuffling code. The first run uses `runOrder=alphabetical`. The second run uses `runOrder=random` with a recorded seed.
 - **REQ-2.4.3**: The seed used for the second run MUST be recorded so the run is reproducible (default: current time millis; overridable via the orchestrator's `--seed` flag).
 - **REQ-2.4.4**: Default invocation is single-run (a normal `mvn test`, wider candidate sets). Double-run mode is opt-in by invoking the orchestrator.
-- **REQ-2.4.5**: The orchestrator is an investigation/isolation tool. It does NOT impose its own build-failure decision: it produces sharper attribution and exits 0 on a clean Maven run. Build-failure-on-leak is the library's responsibility during normal `mvn test` (see REQ-4.2).
+- **REQ-2.4.5**: The orchestrator is an investigation/isolation tool. It does NOT impose its own build-failure decision: it produces sharper attribution and exits 0 on a clean orchestration. Build-failure-on-leak is the library's responsibility during normal `mvn test` (see REQ-4.2).
+- **REQ-2.4.6**: The orchestrator MUST NOT propagate sub-process exit codes. A surefire test failure during a run is exactly when an attribution report is most useful — failing the orchestrator because the suite had a test failure would defeat the purpose. The orchestrator returns non-zero only on internal errors (missing raw reports, unparseable output, sub-process timeout).
 
 ### 3. Test-isolation Prerequisites
 

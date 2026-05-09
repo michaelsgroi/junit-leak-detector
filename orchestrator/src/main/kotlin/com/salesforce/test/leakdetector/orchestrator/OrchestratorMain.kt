@@ -47,31 +47,29 @@ object OrchestratorMain {
         val seed = parsed.seed ?: System.currentTimeMillis()
         out.println("Orchestrator: project=${parsed.projectRoot.absolutePath}, runs=${parsed.runs}, seed=$seed")
 
-        val run1Result =
+        // We don't propagate sub-process exit codes. A surefire test failure during
+        // a run is exactly the situation we want a report for — failing the
+        // investigation tool because the suite had a flaky test would defeat the
+        // purpose. The orchestrator only fails on internal errors (missing reports,
+        // unparseable raw output) below.
+        runSuite(
+            projectRoot = parsed.projectRoot,
+            rawReportFile = rawReport1,
+            runOrder = "alphabetical",
+            runOrderRandomSeed = null,
+            out = out,
+            runLabel = "run 1 (alphabetical)",
+        )
+
+        if (parsed.runs == 2) {
             runSuite(
                 projectRoot = parsed.projectRoot,
-                rawReportFile = rawReport1,
-                runOrder = "alphabetical",
-                runOrderRandomSeed = null,
+                rawReportFile = rawReport2,
+                runOrder = "random",
+                runOrderRandomSeed = seed,
                 out = out,
-                runLabel = "run 1 (alphabetical)",
+                runLabel = "run 2 (random, seed=$seed)",
             )
-        if (run1Result != 0 && parsed.runs == 1) {
-            err.println("Run 1 failed with exit code $run1Result")
-            return run1Result
-        }
-
-        var run2Result = 0
-        if (parsed.runs == 2) {
-            run2Result =
-                runSuite(
-                    projectRoot = parsed.projectRoot,
-                    rawReportFile = rawReport2,
-                    runOrder = "random",
-                    runOrderRandomSeed = seed,
-                    out = out,
-                    runLabel = "run 2 (random, seed=$seed)",
-                )
         }
 
         // Build the final report regardless of run exit codes — a non-zero exit from a
@@ -87,13 +85,7 @@ object OrchestratorMain {
         val text = FinalReportRenderer.renderText(finalReport)
         finalReportFile.writeText(text)
         out.println("Wrote final report to ${finalReportFile.absolutePath}")
-
-        // The orchestrator is an investigation/isolation tool. Build failure on
-        // detected leaks is the library's job at normal `mvn test` time; the
-        // orchestrator's job is to produce sharper attribution. Propagate any
-        // sub-process exit code only so the caller sees genuine Maven failures
-        // (compile errors, infrastructure issues, etc.) — not detector-policy ones.
-        return if (run1Result != 0) run1Result else run2Result
+        return 0
     }
 
     private fun runSuite(
@@ -103,7 +95,7 @@ object OrchestratorMain {
         runOrderRandomSeed: Long?,
         out: PrintStream,
         runLabel: String,
-    ): Int {
+    ) {
         out.println("==> $runLabel")
         val args =
             buildList {
@@ -131,7 +123,6 @@ object OrchestratorMain {
         }
         val finished = process.waitFor(30, TimeUnit.MINUTES)
         check(finished) { "$runLabel timed out" }
-        return process.exitValue()
     }
 
     private fun buildFinalReport(

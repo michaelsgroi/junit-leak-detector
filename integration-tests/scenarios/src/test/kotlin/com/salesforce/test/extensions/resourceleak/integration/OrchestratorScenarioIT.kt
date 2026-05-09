@@ -1,6 +1,7 @@
 package com.salesforce.test.extensions.resourceleak.integration
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.File
@@ -45,7 +46,14 @@ class OrchestratorScenarioIT {
         val output = process.inputStream.bufferedReader().readText()
         val finished = process.waitFor(15, TimeUnit.MINUTES)
         check(finished) { "orchestrator timed out" }
-        assertEquals(0, process.exitValue(), "orchestrator should exit 0 for a passing suite; output:\n$output")
+        assertEquals(0, process.exitValue(), "orchestrator should exit 0; output tail:\n${output.takeLast(2000)}")
+        // The orchestrator does not propagate sub-process failures, but for our own
+        // ITs we assert that no sub-process failed — we control the suite and a
+        // BUILD FAILURE here would indicate a real regression in our test scaffolding.
+        assertFalse(
+            output.contains("BUILD FAILURE"),
+            "expected NO 'BUILD FAILURE' in sub-process output; got tail:\n${output.takeLast(4000)}",
+        )
 
         // Both raw reports + the final report exist.
         val rawReport1 = File(outputDir, "raw-report-1.json")

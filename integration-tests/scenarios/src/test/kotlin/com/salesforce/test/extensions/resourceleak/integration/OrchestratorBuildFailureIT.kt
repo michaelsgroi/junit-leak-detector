@@ -77,6 +77,14 @@ class OrchestratorBuildFailureIT {
             "expected NO 'Build failure triggered' line; got:\n$output",
         )
 
+        // The orchestrator does not propagate sub-process failures, but for our own
+        // ITs we assert that no sub-process failed — we control the suite and a
+        // BUILD FAILURE here would indicate a real regression in our test scaffolding.
+        assertFalse(
+            output.contains("BUILD FAILURE"),
+            "expected NO 'BUILD FAILURE' in sub-process output; got tail:\n${output.takeLast(4000)}",
+        )
+
         // Orchestrator exits 0.
         assertEquals(0, process.exitValue(), "orchestrator should exit 0; output:\n$output")
     }

@@ -300,11 +300,17 @@ Single-run mode (`--runs 1`) is supported for cases where users just want the or
 
 Build failure on detected leaks is **the library's job**, applied at normal `mvn test` time by the inline `AttributionRunner` based on `resource.leak.detector.build.failure.resource.types`. That's the CI gate.
 
-The orchestrator is a separate use case — investigation/isolation. Someone runs it manually (or from a CI investigation job) to get sharper attribution after a CI build has already failed or to proactively analyze a suite. **The orchestrator does not impose its own build-failure decision**; it produces two raw reports and a final intersected leak-report.txt and exits 0 on a clean Maven run.
+The orchestrator is a separate use case — investigation/isolation. Someone runs it manually (or from a CI investigation job) to get sharper attribution after a CI build has already failed or to proactively analyze a suite. **The orchestrator does not impose its own build-failure decision**; it produces two raw reports and a final intersected leak-report.txt and exits 0 on a clean orchestration regardless of what the suite did.
 
 To prevent the library's per-run trigger from short-circuiting run 1 before run 2 gets a chance to run, the orchestrator passes `-Dresource.leak.detector.build.failure.resource.types=` (empty) on each sub-process `mvn test` invocation. Whatever the consuming project has configured for build failure is overridden to empty for these orchestrator-driven runs. The orchestrator does not read or honor `build.failure.resource.types` from its own JVM either.
 
 If a user wants build-failure semantics, they run the library directly via `mvn test` — the orchestrator is the wrong tool for that job.
+
+### Orchestrator and sub-process exit codes
+
+The orchestrator does **not** propagate sub-process exit codes. A surefire test failure during a run is exactly the situation we want a leak report for — failing the investigation tool because the suite had a flaky test would defeat the purpose. The orchestrator exits 0 on a clean orchestration; it returns non-zero only on internal errors (missing raw report, unparseable output, sub-process timeout).
+
+This applies to production users running the orchestrator as an investigation aid. The repo's own scenario tests (`integration-tests/scenarios/`) additionally assert that no sub-process emitted `BUILD FAILURE` — because we control the suite under test and a sub-process failure there would indicate a regression in our scaffolding, not legitimate test churn.
 
 ## C3 — Attribution
 
