@@ -21,300 +21,88 @@ class ResourceLeakReporter(
             LOG.info("")
             LOG.info("Test Class Execution Times:")
             testClassLifecycles.forEach { (testClassName, lifecycle) ->
-                val duration = Duration.between(lifecycle.start, lifecycle.end)
-                val durationMillis = duration.toMillis()
+                val durationMillis = Duration.between(lifecycle.start, lifecycle.end).toMillis()
                 LOG.info("  - $testClassName: ${durationMillis}ms")
             }
         }
 
-        reportSystemPropertyLeaks(testClassLifecycles)
-        reportEnvironmentVariableLeaks(testClassLifecycles)
-        reportThreadLeaks(testClassLifecycles)
-        reportPortLeaks(testClassLifecycles)
-        reportDynamoDbTableLeaks(testClassLifecycles)
-        reportMemoryLeaks(testClassLifecycles)
+        reportDiscreteLeaks(ResourceType.SYSTEM_PROPS, "System Property Leaks", "Property") { (it as ResourceId.PropertyId).name }
+        reportDiscreteLeaks(ResourceType.ENV_VARS, "Environment Variable Leaks", "Variable") { (it as ResourceId.EnvironmentVariableId).name }
+        reportThreadLeaks()
+        reportDiscreteLeaks(ResourceType.PORTS, "Port Leaks", "Port") { (it as ResourceId.PortId).port.toString() }
+        reportDiscreteLeaks(ResourceType.DDBTABLES, "DynamoDB Table Leaks", "Table") { (it as ResourceId.DynamoDbTableId).name }
+        reportMemoryLeaks()
         checkBuildFailure()
     }
 
-    private fun reportSystemPropertyLeaks(testClassLifecycles: Map<TestClassName, TestClassLifecycle>) {
-        if (!isResourceTypeMonitored(ResourceType.SYSTEM_PROPS)) {
-            return
-        }
-
-        val allResources = resourceState.getAllDiscreteResources()
-        val leakedProperties = allResources
-            .filter { (resourceId, info) ->
-                resourceId is ResourceId.PropertyId &&
-                    !info.isBaseline &&
-                    info.destroyed == null
-            }
-            .map { (resourceId, info) -> resourceId as ResourceId.PropertyId to info }
-            .toList()
-
-        if (leakedProperties.isEmpty()) {
-            return
-        }
+    private fun reportDiscreteLeaks(
+        resourceType: ResourceType,
+        header: String,
+        label: String,
+        renderValue: (ResourceId) -> String
+    ) {
+        if (!isResourceTypeMonitored(resourceType)) return
+        val leaks = leakedDiscrete(resourceType)
+        if (leaks.isEmpty()) return
 
         LOG.info("")
-        LOG.info("System Property Leaks:")
-        leakedProperties.forEach { (propertyId, info) ->
-            val candidateTestClasses = findCandidateTestClasses(
-                info.first,
-                testClassLifecycles
-            )
-            LOG.info("  - Property: ${propertyId.name}")
-            LOG.info("    First Detected: ${info.first}")
-            if (candidateTestClasses.isNotEmpty()) {
-                LOG.info("    Candidate Test Classes:")
-                candidateTestClasses.forEach { (testClassName, lifecycle) ->
-                    LOG.info("      - $testClassName")
-                    LOG.info("        Started: ${lifecycle.start}")
-                    LOG.info("        Ended: ${lifecycle.end}")
-                }
-            }
+        LOG.info("$header:")
+        leaks.forEach { resourceId ->
+            LOG.info("  - $label: ${renderValue(resourceId)}")
         }
     }
 
-    private fun reportEnvironmentVariableLeaks(testClassLifecycles: Map<TestClassName, TestClassLifecycle>) {
-        if (!isResourceTypeMonitored(ResourceType.ENV_VARS)) {
-            return
-        }
-
-        val allResources = resourceState.getAllDiscreteResources()
-        val leakedEnvVars = allResources
-            .filter { (resourceId, info) ->
-                resourceId is ResourceId.EnvironmentVariableId &&
-                    !info.isBaseline &&
-                    info.destroyed == null
-            }
-            .map { (resourceId, info) -> resourceId as ResourceId.EnvironmentVariableId to info }
-            .toList()
-
-        if (leakedEnvVars.isEmpty()) {
-            return
-        }
-
-        LOG.info("")
-        LOG.info("Environment Variable Leaks:")
-        leakedEnvVars.forEach { (envVarId, info) ->
-            val candidateTestClasses = findCandidateTestClasses(
-                info.first,
-                testClassLifecycles
-            )
-            LOG.info("  - Variable: ${envVarId.name}")
-            LOG.info("    First Detected: ${info.first}")
-            if (candidateTestClasses.isNotEmpty()) {
-                LOG.info("    Candidate Test Classes:")
-                candidateTestClasses.forEach { (testClassName, lifecycle) ->
-                    LOG.info("      - $testClassName")
-                    LOG.info("        Started: ${lifecycle.start}")
-                    LOG.info("        Ended: ${lifecycle.end}")
-                }
-            }
-        }
-    }
-
-    private fun reportThreadLeaks(testClassLifecycles: Map<TestClassName, TestClassLifecycle>) {
-        if (!isResourceTypeMonitored(ResourceType.THREADS)) {
-            return
-        }
-
-        val allResources = resourceState.getAllDiscreteResources()
-        var leakedThreads = allResources
-            .filter { (resourceId, info) ->
-                resourceId is ResourceId.ThreadId &&
-                    !info.isBaseline &&
-                    info.destroyed == null
-            }
-            .map { (resourceId, info) -> resourceId as ResourceId.ThreadId to info }
-            .toList()
-
-        if (leakedThreads.isEmpty()) {
-            return
-        }
-
-        // Grace period: wait and re-check to filter out threads that terminate during the grace period
-        val gracePeriodSeconds = configuration.threadGracePeriodSeconds
-        try {
-            Thread.sleep(gracePeriodSeconds * 1000)
-        } catch (_: InterruptedException) {
-            // interrupted, proceed with current state
-        }
-
-        val currentThreads = ThreadMonitor().snapshot()
-        leakedThreads = leakedThreads.filter { (threadId, _) -> threadId in currentThreads }
-
-        if (leakedThreads.isEmpty()) {
-            return
-        }
+    private fun reportThreadLeaks() {
+        if (!isResourceTypeMonitored(ResourceType.THREADS)) return
+        val leaks = leakedDiscrete(ResourceType.THREADS)
+        if (leaks.isEmpty()) return
 
         LOG.info("")
         LOG.info("Thread Leaks:")
-        leakedThreads.forEach { (threadId, info) ->
-            val candidateTestClasses = findCandidateTestClasses(
-                info.first,
-                testClassLifecycles
-            )
+        leaks.forEach { resourceId ->
+            val threadId = resourceId as ResourceId.ThreadId
             LOG.info("  - Thread: ${threadId.name} (ID: ${threadId.id})")
-            LOG.info("    First Detected: ${info.first}")
-            if (candidateTestClasses.isNotEmpty()) {
-                LOG.info("    Candidate Test Classes:")
-                candidateTestClasses.forEach { (testClassName, lifecycle) ->
-                    LOG.info("      - $testClassName")
-                    LOG.info("        Started: ${lifecycle.start}")
-                    LOG.info("        Ended: ${lifecycle.end}")
-                }
-            }
         }
     }
 
-    private fun reportPortLeaks(testClassLifecycles: Map<TestClassName, TestClassLifecycle>) {
-        if (!isResourceTypeMonitored(ResourceType.PORTS)) {
-            return
-        }
+    private fun reportMemoryLeaks() {
+        if (!isResourceTypeMonitored(ResourceType.MEMORY)) return
 
-        val allResources = resourceState.getAllDiscreteResources()
-        val leakedPorts = allResources
-            .filter { (resourceId, info) ->
-                resourceId is ResourceId.PortId &&
-                    !info.isBaseline &&
-                    info.destroyed == null
-            }
-            .map { (resourceId, info) -> resourceId as ResourceId.PortId to info }
-            .toList()
-
-        if (leakedPorts.isEmpty()) {
-            return
-        }
-
-        LOG.info("")
-        LOG.info("Port Leaks:")
-        leakedPorts.forEach { (portId, info) ->
-            val candidateTestClasses = findCandidateTestClasses(
-                info.first,
-                testClassLifecycles
-            )
-            LOG.info("  - Port: ${portId.port}")
-            LOG.info("    First Detected: ${info.first}")
-            if (candidateTestClasses.isNotEmpty()) {
-                LOG.info("    Candidate Test Classes:")
-                candidateTestClasses.forEach { (testClassName, lifecycle) ->
-                    LOG.info("      - $testClassName")
-                    LOG.info("        Started: ${lifecycle.start}")
-                    LOG.info("        Ended: ${lifecycle.end}")
-                }
-            }
-        }
-    }
-
-    private fun reportDynamoDbTableLeaks(testClassLifecycles: Map<TestClassName, TestClassLifecycle>) {
-        if (!isResourceTypeMonitored(ResourceType.DDBTABLES)) {
-            return
-        }
-
-        val allResources = resourceState.getAllDiscreteResources()
-        val leakedTables = allResources
-            .filter { (resourceId, info) ->
-                resourceId is ResourceId.DynamoDbTableId &&
-                    !info.isBaseline &&
-                    info.destroyed == null
-            }
-            .map { (resourceId, info) -> resourceId as ResourceId.DynamoDbTableId to info }
-            .toList()
-
-        if (leakedTables.isEmpty()) {
-            return
-        }
-
-        LOG.info("")
-        LOG.info("DynamoDB Table Leaks:")
-        leakedTables.forEach { (tableId, info) ->
-            val candidateTestClasses = findCandidateTestClasses(
-                info.first,
-                testClassLifecycles
-            )
-            LOG.info("  - Table: ${tableId.name}")
-            LOG.info("    First Detected: ${info.first}")
-            if (candidateTestClasses.isNotEmpty()) {
-                LOG.info("    Candidate Test Classes:")
-                candidateTestClasses.forEach { (testClassName, lifecycle) ->
-                    LOG.info("      - $testClassName")
-                    LOG.info("        Started: ${lifecycle.start}")
-                    LOG.info("        Ended: ${lifecycle.end}")
-                }
-            }
-        }
-    }
-
-    private fun reportMemoryLeaks(testClassLifecycles: Map<TestClassName, TestClassLifecycle>) {
-        if (!isResourceTypeMonitored(ResourceType.MEMORY)) {
-            return
-        }
-
-        val measurements = resourceState.getAllNumericMeasurements()
-        if (measurements.size < 2) {
-            return
-        }
-
-        val baseline = measurements.first()
-        val final_ = measurements.last()
-        val growthBytes = final_.value - baseline.value
-        val thresholdBytes = getMemoryGrowthThresholdBytes()
-
-        if (growthBytes <= thresholdBytes) {
-            return
-        }
+        val baseline = resourceState.getBaselineNumeric() ?: return
+        val final = resourceState.getCurrentNumeric() ?: return
+        val growthBytes = final.value - baseline.value
+        val thresholdBytes = configuration.memoryGrowthThresholdMb * BYTES_PER_MB
+        if (growthBytes <= thresholdBytes) return
 
         val baselineMb = baseline.value / BYTES_PER_MB
-        val finalMb = final_.value / BYTES_PER_MB
+        val finalMb = final.value / BYTES_PER_MB
         val increaseMb = growthBytes / BYTES_PER_MB
-
-        val firstDetected = measurements.firstOrNull { it.value - baseline.value > thresholdBytes }
-        val firstDetectedTimestamp = firstDetected?.timestamp ?: final_.timestamp
-
-        val candidateTestClasses = findCandidateTestClasses(firstDetectedTimestamp, testClassLifecycles)
 
         LOG.info("")
         LOG.info("Memory Leaks:")
         LOG.info("  - Baseline: $baselineMb MB")
         LOG.info("  - Final: $finalMb MB")
         LOG.info("  - Increase: $increaseMb MB")
-        LOG.info("  - First Detected: $firstDetectedTimestamp")
-        if (candidateTestClasses.isNotEmpty()) {
-            LOG.info("  - Candidate Test Classes:")
-            candidateTestClasses.forEach { (testClassName, lifecycle) ->
-                LOG.info("    - $testClassName")
-                LOG.info("      Started: ${lifecycle.start}")
-                LOG.info("      Ended: ${lifecycle.end}")
-            }
-        }
+    }
+
+    private fun leakedDiscrete(resourceType: ResourceType): Set<ResourceId> {
+        val resourceIdClass = resourceIdClassFor(resourceType) ?: return emptySet()
+        val baseline = resourceState.getBaselineDiscrete(resourceIdClass)
+        val current = resourceState.getCurrentDiscrete(resourceIdClass)
+        return current - baseline
     }
 
     private fun isResourceTypeMonitored(resourceType: ResourceType): Boolean {
         val property = configuration.monitoredResourceTypes
-        if (property.isBlank()) {
-            return false
-        }
+        if (property.isBlank()) return false
         return property.split(",")
             .map { it.trim() }
             .any { ResourceType.fromConfigValue(it) == resourceType }
     }
 
-    private fun findCandidateTestClasses(
-        resourceFirstDetected: java.time.Instant,
-        testClassLifecycles: Map<TestClassName, TestClassLifecycle>
-    ): Map<TestClassName, TestClassLifecycle> {
-        return testClassLifecycles.filter { (_, lifecycle) ->
-            !resourceFirstDetected.isBefore(lifecycle.start) &&
-                !resourceFirstDetected.isAfter(lifecycle.end)
-        }
-    }
-
     private fun checkBuildFailure() {
         val property = configuration.buildFailureResourceTypes
-        if (property.isBlank()) {
-            return
-        }
+        if (property.isBlank()) return
         val buildFailureResourceTypes = property.split(",")
             .map { it.trim() }
             .mapNotNull { ResourceType.fromConfigValue(it) }
@@ -327,50 +115,24 @@ class ResourceLeakReporter(
         }
     }
 
-    private fun hasLeaksForResourceType(resourceType: ResourceType): Boolean {
-        return when (resourceType) {
-            ResourceType.SYSTEM_PROPS -> hasDiscreteLeaksForResourceType(resourceType)
-            ResourceType.ENV_VARS -> hasDiscreteLeaksForResourceType(resourceType)
-            ResourceType.THREADS -> hasDiscreteLeaksForResourceType(resourceType)
-            ResourceType.PORTS -> hasDiscreteLeaksForResourceType(resourceType)
-            ResourceType.DDBTABLES -> hasDiscreteLeaksForResourceType(resourceType)
-            ResourceType.MEMORY -> hasMemoryLeak()
-        }
-    }
-
-    private fun hasDiscreteLeaksForResourceType(resourceType: ResourceType): Boolean {
-        val allResources = resourceState.getAllDiscreteResources()
-        return allResources.any { (resourceId, info) ->
-            resourceIdMatchesType(resourceId, resourceType) &&
-                !info.isBaseline &&
-                info.destroyed == null
-        }
+    private fun hasLeaksForResourceType(resourceType: ResourceType): Boolean = when (resourceType) {
+        ResourceType.MEMORY -> hasMemoryLeak()
+        else -> leakedDiscrete(resourceType).isNotEmpty()
     }
 
     private fun hasMemoryLeak(): Boolean {
-        val measurements = resourceState.getAllNumericMeasurements()
-        if (measurements.size < 2) {
-            return false
-        }
-        val baseline = measurements.first()
-        val final_ = measurements.last()
-        val growthBytes = final_.value - baseline.value
-        return growthBytes > getMemoryGrowthThresholdBytes()
+        val baseline = resourceState.getBaselineNumeric() ?: return false
+        val final = resourceState.getCurrentNumeric() ?: return false
+        return final.value - baseline.value > configuration.memoryGrowthThresholdMb * BYTES_PER_MB
     }
 
-    private fun getMemoryGrowthThresholdBytes(): Long {
-        return configuration.memoryGrowthThresholdMb * BYTES_PER_MB
-    }
-
-    private fun resourceIdMatchesType(resourceId: ResourceId, resourceType: ResourceType): Boolean {
-        return when (resourceType) {
-            ResourceType.SYSTEM_PROPS -> resourceId is ResourceId.PropertyId
-            ResourceType.ENV_VARS -> resourceId is ResourceId.EnvironmentVariableId
-            ResourceType.THREADS -> resourceId is ResourceId.ThreadId
-            ResourceType.PORTS -> resourceId is ResourceId.PortId
-            ResourceType.DDBTABLES -> resourceId is ResourceId.DynamoDbTableId
-            ResourceType.MEMORY -> false
-        }
+    private fun resourceIdClassFor(resourceType: ResourceType) = when (resourceType) {
+        ResourceType.SYSTEM_PROPS -> ResourceId.PropertyId::class
+        ResourceType.ENV_VARS -> ResourceId.EnvironmentVariableId::class
+        ResourceType.THREADS -> ResourceId.ThreadId::class
+        ResourceType.PORTS -> ResourceId.PortId::class
+        ResourceType.DDBTABLES -> ResourceId.DynamoDbTableId::class
+        ResourceType.MEMORY -> null
     }
 
     companion object {

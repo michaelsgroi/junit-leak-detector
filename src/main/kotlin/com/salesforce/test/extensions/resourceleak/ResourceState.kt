@@ -12,110 +12,49 @@ data class TestClassLifecycle(
 
 class ResourceState {
     private val testClassLifecycles = mutableMapOf<TestClassName, TestClassLifecycle>()
-    private var baselinePeriodEndTimestamp: Instant? = null
-    private val discreteResources = mutableMapOf<ResourceId, DiscreteResourceInfo>()
-    private val numericMeasurements = mutableListOf<NumericResourceMeasurement>()
+    private val baselineDiscrete = mutableMapOf<KClass<out ResourceId>, Set<ResourceId>>()
+    private val currentDiscrete = mutableMapOf<KClass<out ResourceId>, Set<ResourceId>>()
+    private var baselineNumeric: NumericResourceMeasurement? = null
+    private var currentNumeric: NumericResourceMeasurement? = null
 
     fun recordTestClassStart(testClassName: TestClassName, startTimestamp: Instant) {
-        val isFirstTestClass = testClassLifecycles.isEmpty()
-        if (isFirstTestClass) {
-            baselinePeriodEndTimestamp = startTimestamp
-        }
-        testClassLifecycles[testClassName] = TestClassLifecycle(
-            start = startTimestamp,
-            end = startTimestamp
-        )
+        testClassLifecycles[testClassName] = TestClassLifecycle(start = startTimestamp, end = startTimestamp)
     }
 
     fun recordTestClassEnd(testClassName: TestClassName, endTimestamp: Instant) {
-        val existing = testClassLifecycles[testClassName]
-        if (existing != null) {
-            testClassLifecycles[testClassName] = existing.copy(end = endTimestamp)
-        }
+        val existing = testClassLifecycles[testClassName] ?: return
+        testClassLifecycles[testClassName] = existing.copy(end = endTimestamp)
     }
 
-    fun getAllTestClassLifecycles(): Map<TestClassName, TestClassLifecycle> {
-        return testClassLifecycles.toMap()
+    fun getAllTestClassLifecycles(): Map<TestClassName, TestClassLifecycle> = testClassLifecycles.toMap()
+
+    fun recordBaselineDiscrete(resourceIdType: KClass<out ResourceId>, resources: Set<ResourceId>) {
+        baselineDiscrete[resourceIdType] = resources.toSet()
+        currentDiscrete[resourceIdType] = resources.toSet()
     }
 
-    fun recordBaselineResources(resources: Set<ResourceId>, timestamp: Instant) {
-        resources.forEach { resourceId ->
-            discreteResources[resourceId] = DiscreteResourceInfo(
-                first = timestamp,
-                last = timestamp,
-                destroyed = null,
-                isBaseline = true
-            )
-        }
+    fun updateCurrentDiscrete(resourceIdType: KClass<out ResourceId>, resources: Set<ResourceId>) {
+        currentDiscrete[resourceIdType] = resources.toSet()
     }
 
-    fun updateDiscreteResources(
-        currentResources: Set<ResourceId>,
-        timestamp: Instant,
-        resourceIdType: KClass<out ResourceId>? = null
-    ): Set<ResourceId> {
-        val isBaseline = false
-        val existingResourceIds = if (resourceIdType != null) {
-            discreteResources.keys.filter { resourceIdType.isInstance(it) }.toSet()
-        } else {
-            discreteResources.keys.toSet()
-        }
-        val newlyDetected = currentResources - existingResourceIds
-        val noLongerDetected = existingResourceIds - currentResources
-        val stillDetected = currentResources intersect existingResourceIds
-        val recreatedResources = mutableSetOf<ResourceId>()
+    fun getBaselineDiscrete(resourceIdType: KClass<out ResourceId>): Set<ResourceId> =
+        baselineDiscrete[resourceIdType].orEmpty()
 
-        newlyDetected.forEach { resourceId ->
-            discreteResources[resourceId] = DiscreteResourceInfo(
-                first = timestamp,
-                last = timestamp,
-                destroyed = null,
-                isBaseline = isBaseline
-            )
-        }
+    fun getCurrentDiscrete(resourceIdType: KClass<out ResourceId>): Set<ResourceId> =
+        currentDiscrete[resourceIdType].orEmpty()
 
-        noLongerDetected.forEach { resourceId ->
-            val existing = discreteResources[resourceId]
-            if (existing != null && existing.destroyed == null) {
-                discreteResources[resourceId] = existing.copy(destroyed = timestamp)
-            }
-        }
-
-        stillDetected.forEach { resourceId ->
-            val existing = discreteResources[resourceId]
-            if (existing != null) {
-                if (existing.destroyed != null) {
-                    recreatedResources.add(resourceId)
-                    discreteResources[resourceId] = DiscreteResourceInfo(
-                        first = existing.first,
-                        last = timestamp,
-                        destroyed = null,
-                        isBaseline = existing.isBaseline
-                    )
-                } else {
-                    discreteResources[resourceId] = existing.copy(last = timestamp)
-                }
-            }
-        }
-
-        return recreatedResources
+    fun recordBaselineNumeric(measurement: NumericResourceMeasurement) {
+        baselineNumeric = measurement
+        currentNumeric = measurement
     }
 
-    fun getAllDiscreteResources(): Map<ResourceId, DiscreteResourceInfo> {
-        return discreteResources.toMap()
+    fun updateCurrentNumeric(measurement: NumericResourceMeasurement) {
+        currentNumeric = measurement
     }
 
-    fun recordNumericMeasurement(measurement: NumericResourceMeasurement) {
-        numericMeasurements.add(measurement)
-    }
+    fun getBaselineNumeric(): NumericResourceMeasurement? = baselineNumeric
 
-    fun getAllNumericMeasurements(): List<NumericResourceMeasurement> {
-        return numericMeasurements.toList()
-    }
-
-    fun getBaselinePeriodEndTimestamp(): Instant? {
-        return baselinePeriodEndTimestamp
-    }
+    fun getCurrentNumeric(): NumericResourceMeasurement? = currentNumeric
 
     companion object {
         @JvmStatic

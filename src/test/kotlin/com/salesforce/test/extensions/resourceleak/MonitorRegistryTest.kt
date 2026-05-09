@@ -3,6 +3,7 @@ package com.salesforce.test.extensions.resourceleak
 import com.salesforce.test.TestClock
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -30,38 +31,41 @@ class MonitorRegistryTest {
 
         registry.captureBaseline()
 
-        val baselineProp = state.getAllDiscreteResources()[ResourceId.PropertyId("test.property.baseline")]
-        assertTrue(baselineProp != null)
-        assertEquals(true, baselineProp?.isBaseline)
+        val baseline = state.getBaselineDiscrete(ResourceId.PropertyId::class)
+        assertTrue(baseline.contains(ResourceId.PropertyId("test.property.baseline")))
+        assertEquals(baseline, state.getCurrentDiscrete(ResourceId.PropertyId::class))
     }
 
     @Test
-    fun `snapshotAll detects new discrete resources after baseline`() {
+    fun `snapshotAll updates current with new resources, leaving baseline unchanged`() {
         val state = ResourceState()
         val clock = TestClock(0L)
         val registry = MonitorRegistry(state, clock, configuration = configWith("systemprops"))
         registry.captureBaseline()
+        val baseline = state.getBaselineDiscrete(ResourceId.PropertyId::class)
 
         clock.advanceMillis(5)
         System.setProperty("test.property.leaked", "v")
         registry.snapshotAll()
 
-        val leaked = state.getAllDiscreteResources()[ResourceId.PropertyId("test.property.leaked")]
-        assertTrue(leaked != null)
-        assertEquals(false, leaked?.isBaseline)
+        val current = state.getCurrentDiscrete(ResourceId.PropertyId::class)
+        assertTrue(current.contains(ResourceId.PropertyId("test.property.leaked")))
+        assertFalse(baseline.contains(ResourceId.PropertyId("test.property.leaked")))
+        assertEquals(baseline, state.getBaselineDiscrete(ResourceId.PropertyId::class))
     }
 
     @Test
-    fun `snapshotAll records numeric measurements`() {
+    fun `snapshotAll updates current numeric measurement`() {
         val state = ResourceState()
         val clock = TestClock(0L)
         val registry = MonitorRegistry(state, clock, configuration = configWith("memory"))
         registry.captureBaseline()
+        val baseline = state.getBaselineNumeric()
         clock.advanceMillis(5)
         registry.snapshotAll()
 
-        val measurements = state.getAllNumericMeasurements()
-        assertTrue(measurements.size >= 2)
+        assertTrue(state.getCurrentNumeric() != null)
+        assertTrue(baseline != null)
     }
 
     @Test

@@ -43,22 +43,20 @@ class MonitorRegistry(
     }
 
     fun captureBaseline() {
-        val timestamp = clock.instant()
         discreteMonitors.forEach { monitor ->
-            resourceState.recordBaselineResources(monitor.snapshot(), timestamp)
+            resourceState.recordBaselineDiscrete(monitor.resourceIdClass, monitor.snapshot())
         }
         numericMonitors.forEach { monitor ->
-            resourceState.recordNumericMeasurement(monitor.snapshot())
+            resourceState.recordBaselineNumeric(monitor.snapshot())
         }
     }
 
     fun snapshotAll() {
-        val timestamp = clock.instant()
         discreteMonitors.forEach { monitor ->
-            resourceState.updateDiscreteResources(monitor.snapshot(), timestamp, monitor.resourceIdClass)
+            resourceState.updateCurrentDiscrete(monitor.resourceIdClass, monitor.snapshot())
         }
         numericMonitors.forEach { monitor ->
-            resourceState.recordNumericMeasurement(monitor.snapshot())
+            resourceState.updateCurrentNumeric(monitor.snapshot())
         }
     }
 
