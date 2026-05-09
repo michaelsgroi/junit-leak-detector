@@ -24,7 +24,13 @@ test-report-only:
 			echo "FAIL: did not expect 'Build failure triggered' log line"; \
 			exit 1; \
 		fi; \
-		echo "PASS: build succeeded, all 5 leak types reported, no build failure triggered"
+		for control in "control.property.SystemPropertyControlTest" "CONTROL_VAR_ENVIRONMENT_VARIABLE_CONTROL_TEST" "control-thread-ThreadControlTest"; do \
+			if grep -q "$$control" /tmp/junit-leak-detector-app-report-only.log; then \
+				echo "FAIL: control resource '$$control' was incorrectly flagged as a leak"; \
+				exit 1; \
+			fi; \
+		done; \
+		echo "PASS: build succeeded, all 5 leak types reported, no build failure triggered, no control resources flagged"
 
 # build-failure scenario: same 5 monitors, plus build.failure.resource.types=memory.
 # Build FAILS. Output is suppressed because the failure is expected; we only print
