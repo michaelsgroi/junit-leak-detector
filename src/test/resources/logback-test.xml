@@ -1,0 +1,8 @@
+<configuration>
+    <!--
+        Test-only logback config. No console appender by default — keeps `mvn test`
+        output clean. LogAssertingExtension attaches its own in-memory appender
+        when a test asserts on log content.
+    -->
+    <root level="WARN" />
+</configuration>

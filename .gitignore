@@ -1,0 +1,31 @@
+# Maven build output
+target/
+
+# IDE: IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# IDE: VS Code / Eclipse
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime artifacts
+dynamodb-local-metadata.json
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*~
+
+# Internal docs (kept locally, not checked in)
+docs/
