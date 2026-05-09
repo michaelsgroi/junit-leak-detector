@@ -26,7 +26,8 @@ The project is a multi-module Maven build. The root pom is `packaging=pom` and a
 junit-leak-detector/                     ← parent (packaging=pom)
 ├── library/                             ← C1: detector library (the JAR consumers depend on)
 ├── attribution/                         ← C3: attribution module (reusable lib + standalone CLI)
-├── orchestrator/                        ← C2: Maven plugin for double-run mode
+├── orchestrator/                        ← C2: double-run runnable class + Bash launcher
+│   └── bin/junit-leak-detector-orchestrator
 └── integration-tests/                   ← aggregator
     ├── basic/                           ← subject suite: leaking + control test classes
     ├── ddb/                             ← subject suite: DynamoDB Local leaking test
@@ -259,23 +260,41 @@ The schema is the contract between C1 and C3: everything C3 needs to compute can
 
 ## C2 — Second Run (Optional)
 
-C2 is packaged as a **Maven plugin** (the `orchestrator` module). Distributed via the same Maven artifact pipeline as the library, versioned alongside it, and invoked by users as `mvn com.salesforce.test:junit-leak-detector-orchestrator:run` (or via a binding in their pom). A plugin is preferred over a shell script because it's portable across CI environments, native to the Maven workflow consumers already use, and avoids shipping a separate distribution channel.
+C2 is the `orchestrator` module. For v1 it ships as a **runnable class** (`OrchestratorMain`) plus a thin Bash launcher (`bin/junit-leak-detector-orchestrator`) that builds the classpath from the local Maven repo and invokes it. A Maven plugin wrapper is deferred — the runnable-class shape is the same as the standalone attribution CLI and keeps the orchestrator usable from any CI script today. Wrapping it in a plugin (or `exec-maven-plugin` recipe) is a backlog item once we know we want it.
 
-When double-run mode is enabled, the plugin invokes the test suite twice. **C2 controls the full Surefire configuration for both runs** so neither run depends on whatever Surefire defaults the project happens to have. Flags C2 sets explicitly on each invocation:
+Invocation:
+
+```
+java -cp <orchestrator-jar>:<attribution-jar>:<kotlin-stdlib-jar> \
+    com.salesforce.test.leakdetector.orchestrator.OrchestratorMain \
+    --project-root <module-dir> [--runs 1|2] [--seed <long>] [--output-dir <dir>] \
+    [--memory-threshold-mb <n>]
+```
+
+or via the bundled launcher:
+
+```
+junit-leak-detector-orchestrator --project-root <module-dir> [--runs 1|2] ...
+```
+
+When double-run mode is selected (`--runs 2`, the default), the orchestrator invokes `mvn test` twice as a sub-process against the consuming module. **The orchestrator controls the full Surefire configuration for both runs** so neither run depends on whatever defaults the project pom happens to have. Flags forced via `-D` properties on each invocation:
 
 - `surefire.runOrder` — `alphabetical` for run 1, `random` for run 2
-- `surefire.runOrderRandomSeed` — generated and recorded for run 2
+- `surefire.runOrder.random.seed` — recorded for run 2 (defaults to current time millis; overridable via `--seed`)
 - `forkCount=1`, `reuseForks=true` — required for cross-class leak detection
 - `junit.jupiter.extensions.autodetection.enabled=true` — required for the extension to load
-- Output paths so each run writes to its own raw report file
+- `resource.leak.detector.raw.report.output.path` — points each run at its own output file
 
-Outputs:
+Outputs (under `--output-dir`, which defaults to `<project>/target/resource-leak-detector/orchestrator-<uuid>/`):
 1. Run 1: `raw-report-1.json`
 2. Run 2: `raw-report-2.json`
+3. Final intersected report: `leak-report.txt`
 
-C2 is a thin orchestrator. The actual capture work is done by C1 in each invocation. C1 is unaware of run pairing — it just writes one raw report per JVM lifetime; C3 consumes both.
+The orchestrator is a thin coordinator. The actual capture work is done by the library in each `mvn test` invocation. The library is unaware of run pairing — it just writes one raw report per JVM lifetime; the orchestrator reads both and invokes the attribution module's `intersectAcrossRuns` directly (no sub-process needed; orchestrator and attribution are in the same JVM).
 
-Default mode is single-run; double-run is opt-in via `runs=2` in configuration or the `-Dresource.leak.detector.runs=2` system property.
+Single-run mode (`--runs 1`) is supported for cases where users just want the orchestrator's invocation discipline (forced Surefire flags, output path management) without the cost of running twice. The intersection step is skipped; the final report is built from `raw-report-1.json` only.
+
+**Caveat on intersection across runs**: candidate sets are intersected by `(resourceType, resourceKey)`. For resource types whose identity is stable across JVM runs (system properties, env vars, DDB tables, memory) intersection narrows attribution as intended. For thread IDs and ephemeral port numbers — both of which differ per JVM — the current intersection-by-identity logic effectively drops these leaks from the final intersected report. Improving this (e.g., intersecting by candidate-class-set per leak rather than by exact resource identity) is a known follow-up.
 
 ### Build failure with double-run mode
 

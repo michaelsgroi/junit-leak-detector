@@ -1,29 +1,28 @@
 package com.salesforce.test.extensions.resourceleak
 
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.extension.ExtendWith
-import uk.org.webcompere.systemstubs.environment.EnvironmentVariables
-import uk.org.webcompere.systemstubs.jupiter.SystemStub
-import uk.org.webcompere.systemstubs.jupiter.SystemStubsExtension
 
 /**
- * Control test: sets an environment variable using system-stubs-jupiter, which
- * automatically restores the original env after the test. Verifies the detector
- * does NOT report this as a leak.
+ * Control test: sets an environment variable using direct reflection (the same
+ * mechanism as EnvironmentVariableLeakingTest), then deletes it in @AfterEach.
+ * Verifies the detector does NOT report this as a leak. Uses the same reflection
+ * path as the leaking test to avoid order-fragile interactions with libraries
+ * (like system-stubs-jupiter) that swap JDK internals via reflection.
  */
-@ExtendWith(SystemStubsExtension::class)
 class EnvironmentVariableControlTest {
-    @SystemStub
-    var environmentVariables: EnvironmentVariables = EnvironmentVariables()
+    private val varName = "CONTROL_VAR_ENVIRONMENT_VARIABLE_CONTROL_TEST"
 
     @Test
     fun `environment variable set and restored within test does not leak`() {
-        environmentVariables.set("CONTROL_VAR_ENVIRONMENT_VARIABLE_CONTROL_TEST", "control-value")
-        assertEquals(
-            "control-value",
-            System.getenv("CONTROL_VAR_ENVIRONMENT_VARIABLE_CONTROL_TEST"),
-        )
+        EnvVarReflection.set(varName, "control-value")
+        assertEquals("control-value", System.getenv(varName))
         Thread.sleep(150)
+    }
+
+    @AfterEach
+    fun cleanup() {
+        EnvVarReflection.remove(varName)
     }
 }
