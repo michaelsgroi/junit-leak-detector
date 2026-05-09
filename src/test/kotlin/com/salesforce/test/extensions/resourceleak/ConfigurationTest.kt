@@ -10,7 +10,6 @@ class ConfigurationTest {
     fun `defaults apply when neither file nor system property is set`() {
         val config = Configuration(propertiesLoader = { null }, systemPropertyLookup = { null })
         assertEquals("", config.monitoredResourceTypes)
-        assertEquals(5000L, config.pollingIntervalMs)
         assertEquals(10L, config.threadGracePeriodSeconds)
         assertEquals(1024L, config.memoryGrowthThresholdMb)
         assertEquals("", config.buildFailureResourceTypes)
@@ -20,14 +19,12 @@ class ConfigurationTest {
     fun `properties file values are used when present`() {
         val props = Properties().apply {
             setProperty("monitored.resource.types", "ports,threads")
-            setProperty("polling.interval.milliseconds", "200")
             setProperty("thread.grace.period.seconds", "5")
             setProperty("memory.growth.threshold.mb", "50")
             setProperty("build.failure.resource.types", "memory")
         }
         val config = Configuration(propertiesLoader = { props }, systemPropertyLookup = { null })
         assertEquals("ports,threads", config.monitoredResourceTypes)
-        assertEquals(200L, config.pollingIntervalMs)
         assertEquals(5L, config.threadGracePeriodSeconds)
         assertEquals(50L, config.memoryGrowthThresholdMb)
         assertEquals("memory", config.buildFailureResourceTypes)
@@ -48,12 +45,12 @@ class ConfigurationTest {
 
     @Test
     fun `blank system property does not override file value`() {
-        val props = Properties().apply { setProperty("polling.interval.milliseconds", "750") }
+        val props = Properties().apply { setProperty("thread.grace.period.seconds", "7") }
         val config = Configuration(
             propertiesLoader = { props },
             systemPropertyLookup = { "" }
         )
-        assertEquals(750L, config.pollingIntervalMs)
+        assertEquals(7L, config.threadGracePeriodSeconds)
     }
 
     @Test

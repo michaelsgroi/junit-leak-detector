@@ -18,7 +18,11 @@ import java.util.function.Function
 class ResourceLeakMonitorTestLifecycleExtensionTest {
     private val testResourceState = ResourceState()
     private val clock = TestClock(0L) // Clock starts at 0ms
-    private val testee = ResourceLeakMonitorTestLifecycleExtension(testResourceState, clock)
+    private val testee = ResourceLeakMonitorTestLifecycleExtension(
+        resourceState = testResourceState,
+        clock = clock,
+        registryProvider = { null } // overridden per-test where needed
+    )
     private val testClass1 = TestClass1::class.java
     private val testClass2 = TestClass2::class.java
 
@@ -43,6 +47,50 @@ class ResourceLeakMonitorTestLifecycleExtensionTest {
             ),
             testResourceState.getAllTestClassLifecycles()
         )
+    }
+
+    @Test
+    fun `each callback triggers a snapshot via the registry`() {
+        val state = ResourceState()
+        var calls = 0
+        val reg = MonitorRegistry(
+            resourceState = state,
+            clock = clock,
+            classPresent = { true },
+            configuration = configWithMonitored("systemprops")
+        )
+        // Wrap reg with a counting decorator using a registry provider that increments and delegates
+        val extension = ResourceLeakMonitorTestLifecycleExtension(
+            resourceState = state,
+            clock = clock,
+            registryProvider = {
+                calls++
+                reg
+            }
+        )
+        val ctx = createMockExtensionContext(testClass1)
+        extension.beforeAll(ctx)
+        extension.beforeEach(ctx)
+        extension.afterEach(ctx)
+        extension.afterAll(ctx)
+        assertEquals(4, calls)
+    }
+
+    @Test
+    fun `callbacks are no-ops when no registry available`() {
+        val ctx = createMockExtensionContext(testClass1)
+        // registryProvider returns null on the testee
+        testee.beforeAll(ctx)
+        testee.beforeEach(ctx)
+        testee.afterEach(ctx)
+        testee.afterAll(ctx)
+        // No exception thrown, lifecycle still recorded
+        assertEquals(1, testResourceState.getAllTestClassLifecycles().size)
+    }
+
+    private fun configWithMonitored(types: String): Configuration {
+        val props = java.util.Properties().apply { setProperty("monitored.resource.types", types) }
+        return Configuration(propertiesLoader = { props }, systemPropertyLookup = { null })
     }
 
     private fun createMockExtensionContext(testClass: Class<*>): ExtensionContext {

@@ -6,19 +6,19 @@ import org.junit.jupiter.api.Test
 class EnvironmentVariableMonitorTest {
 
     @Test
-    fun `gatherResources returns current environment variables`() {
+    fun `snapshot returns current environment variables`() {
         val monitor = EnvironmentVariableMonitor()
 
-        val resources = monitor.gatherResources()
+        val resources = monitor.snapshot()
 
         assertTrue(resources.contains(ResourceId.EnvironmentVariableId("PATH")))
     }
 
     @Test
-    fun `gatherResources returns EnvironmentVariableId types`() {
+    fun `snapshot returns EnvironmentVariableId types`() {
         val monitor = EnvironmentVariableMonitor()
 
-        val resources = monitor.gatherResources()
+        val resources = monitor.snapshot()
 
         assertTrue(resources.isNotEmpty())
         assertTrue(resources.all { it is ResourceId.EnvironmentVariableId })

@@ -20,7 +20,7 @@ class DynamoDbLocalTableMonitor(
         .region(Region.US_EAST_1)
         .build()
 
-    override fun gatherResources(): Set<ResourceId> {
+    override fun snapshot(): Set<ResourceId> {
         return try {
             client.listTables().tableNames()
                 .map { ResourceId.DynamoDbTableId(it) }

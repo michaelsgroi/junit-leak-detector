@@ -8,11 +8,11 @@ import org.junit.jupiter.api.Test
 class MemoryMonitorTest {
 
     @Test
-    fun `measureResource returns positive heap usage with timestamp from clock`() {
+    fun `snapshot returns positive heap usage with timestamp from clock`() {
         val clock = TestClock(1000L)
         val monitor = MemoryMonitor(clock)
 
-        val measurement = monitor.measureResource()
+        val measurement = monitor.snapshot()
 
         assertTrue(measurement.value > 0)
         assertEquals(clock.instant(), measurement.timestamp)

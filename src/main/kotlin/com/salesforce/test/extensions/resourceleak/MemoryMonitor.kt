@@ -5,7 +5,7 @@ import java.time.Clock
 class MemoryMonitor(
     private val clock: Clock = Clock.systemUTC()
 ) : NumericResourceMonitor {
-    override fun measureResource(): NumericResourceMeasurement {
+    override fun snapshot(): NumericResourceMeasurement {
         val runtime = Runtime.getRuntime()
         return NumericResourceMeasurement(
             value = runtime.totalMemory() - runtime.freeMemory(),

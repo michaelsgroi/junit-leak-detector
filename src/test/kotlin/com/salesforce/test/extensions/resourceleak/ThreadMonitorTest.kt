@@ -7,32 +7,32 @@ import org.junit.jupiter.api.Test
 class ThreadMonitorTest {
 
     @Test
-    fun `gatherResources includes main thread`() {
+    fun `snapshot includes main thread`() {
         val monitor = ThreadMonitor()
 
-        val resources = monitor.gatherResources()
+        val resources = monitor.snapshot()
 
         assertTrue(resources.any { it is ResourceId.ThreadId && it.name == "main" })
     }
 
     @Test
-    fun `gatherResources excludes terminated threads`() {
+    fun `snapshot excludes terminated threads`() {
         val monitor = ThreadMonitor()
         val thread = Thread { /* no-op */ }
         thread.name = "test-terminated-thread"
         thread.start()
         thread.join()
 
-        val resources = monitor.gatherResources()
+        val resources = monitor.snapshot()
 
         assertFalse(resources.any { it is ResourceId.ThreadId && it.name == "test-terminated-thread" })
     }
 
     @Test
-    fun `gatherResources returns ThreadId types`() {
+    fun `snapshot returns ThreadId types`() {
         val monitor = ThreadMonitor()
 
-        val resources = monitor.gatherResources()
+        val resources = monitor.snapshot()
 
         assertTrue(resources.isNotEmpty())
         assertTrue(resources.all { it is ResourceId.ThreadId })

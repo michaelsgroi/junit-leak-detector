@@ -6,7 +6,7 @@ class PortMonitor : DiscreteResourceMonitor {
     private val log = LoggerFactory.getLogger(javaClass)
     override val resourceIdClass = ResourceId.PortId::class
 
-    override fun gatherResources(): Set<ResourceId> {
+    override fun snapshot(): Set<ResourceId> {
         return try {
             val pid = ProcessHandle.current().pid()
             val os = System.getProperty("os.name", "").lowercase()

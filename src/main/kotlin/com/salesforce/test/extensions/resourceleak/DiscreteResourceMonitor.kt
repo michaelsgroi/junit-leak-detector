@@ -4,5 +4,5 @@ import kotlin.reflect.KClass
 
 interface DiscreteResourceMonitor {
     val resourceIdClass: KClass<out ResourceId>
-    fun gatherResources(): Set<ResourceId>
+    fun snapshot(): Set<ResourceId>
 }

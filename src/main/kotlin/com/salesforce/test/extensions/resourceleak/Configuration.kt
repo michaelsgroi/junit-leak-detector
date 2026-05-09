@@ -19,9 +19,6 @@ class Configuration(
     val monitoredResourceTypes: String
         get() = read("monitored.resource.types") ?: ""
 
-    val pollingIntervalMs: Long
-        get() = read("polling.interval.milliseconds")?.toLong() ?: 5000L
-
     val threadGracePeriodSeconds: Long
         get() = read("thread.grace.period.seconds")?.toLong() ?: 10L
 

@@ -15,9 +15,9 @@ class SystemPropertyMonitorTest {
     }
 
     @Test
-    fun `gatherResources returns all system properties`() {
+    fun `snapshot returns all system properties`() {
         val existingProperties = System.getProperties().stringPropertyNames()
-        val resources = monitor.gatherResources()
+        val resources = monitor.snapshot()
 
         assertEquals(existingProperties.size, resources.size)
         assertTrue(resources.all { it is ResourceId.PropertyId })
@@ -27,24 +27,24 @@ class SystemPropertyMonitorTest {
     }
 
     @Test
-    fun `gatherResources includes newly set properties`() {
-        val beforeCount = monitor.gatherResources().size
+    fun `snapshot includes newly set properties`() {
+        val beforeCount = monitor.snapshot().size
 
         System.setProperty("test.property.1", "value1")
-        val afterCount = monitor.gatherResources().size
+        val afterCount = monitor.snapshot().size
 
         assertEquals(beforeCount + 1, afterCount)
-        assertTrue(monitor.gatherResources().contains(ResourceId.PropertyId("test.property.1")))
+        assertTrue(monitor.snapshot().contains(ResourceId.PropertyId("test.property.1")))
     }
 
     @Test
-    fun `gatherResources excludes cleared properties`() {
+    fun `snapshot excludes cleared properties`() {
         System.setProperty("test.property.1", "value1")
         System.setProperty("test.property.2", "value2")
-        val withProperties = monitor.gatherResources()
+        val withProperties = monitor.snapshot()
 
         System.clearProperty("test.property.1")
-        val afterClear = monitor.gatherResources()
+        val afterClear = monitor.snapshot()
 
         assertTrue(withProperties.contains(ResourceId.PropertyId("test.property.1")))
         assertTrue(!afterClear.contains(ResourceId.PropertyId("test.property.1")))

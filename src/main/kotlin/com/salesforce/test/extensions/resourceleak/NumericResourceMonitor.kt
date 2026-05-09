@@ -8,5 +8,5 @@ data class NumericResourceMeasurement(
 )
 
 interface NumericResourceMonitor {
-    fun measureResource(): NumericResourceMeasurement
+    fun snapshot(): NumericResourceMeasurement
 }

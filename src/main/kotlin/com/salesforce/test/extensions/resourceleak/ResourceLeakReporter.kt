@@ -141,7 +141,7 @@ class ResourceLeakReporter(
             // interrupted, proceed with current state
         }
 
-        val currentThreads = ThreadMonitor().gatherResources()
+        val currentThreads = ThreadMonitor().snapshot()
         leakedThreads = leakedThreads.filter { (threadId, _) -> threadId in currentThreads }
 
         if (leakedThreads.isEmpty()) {
