@@ -3,6 +3,7 @@ package com.salesforce.test.leakdetector.attribution.cli
 import com.salesforce.test.leakdetector.attribution.Attribution
 import com.salesforce.test.leakdetector.attribution.FinalReport
 import com.salesforce.test.leakdetector.attribution.FinalReportRenderer
+import com.salesforce.test.leakdetector.attribution.HtmlOpener
 import com.salesforce.test.leakdetector.attribution.RawReportReader
 import java.io.File
 import java.io.PrintStream
@@ -33,14 +34,16 @@ object AttributionCli {
                 return ERROR_EXIT_CODE
             }
 
-        val text = FinalReportRenderer.renderText(report)
-        // Always write a leak summary file next to the input raw report. Each summary
-        // gets an ISO-8601-seconds timestamp suffix so multiple invocations don't clobber.
+        val html = FinalReportRenderer.renderHtml(report)
+        // Always write a leak summary HTML file next to the input raw report. Each
+        // summary gets an ISO-8601-seconds timestamp suffix so multiple invocations
+        // don't clobber.
         val outputDir = parsed.firstReport.parentFile ?: File(".")
-        val summaryFile = File(outputDir, "leak-summary-${timestampNow()}.txt")
+        val summaryFile = File(outputDir, "leak-summary-${timestampNow()}.html")
         summaryFile.parentFile?.mkdirs()
-        summaryFile.writeText(text)
+        summaryFile.writeText(html)
         out.println("Wrote leak summary to ${summaryFile.absolutePath}")
+        HtmlOpener.open(summaryFile)
         return 0
     }
 
@@ -122,9 +125,10 @@ object AttributionCli {
             Usage: attribution <raw-report-1> [raw-report-2] [options]
 
             Reads one or two raw reports produced by the test runner and writes the
-            attributed leak summary as `leak-summary-<ISO-timestamp>.txt` next to
-            the input raw report. With two reports, the candidate sets are
-            intersected across runs to produce sharper attribution.
+            attributed leak summary as `leak-summary-<ISO-timestamp>.html` next to
+            the input raw report; the file is opened in the default browser
+            (suppress with JUNIT_LEAK_DETECTOR_NO_OPEN=1). With two reports, the
+            candidate sets are intersected across runs to produce sharper attribution.
 
             Options:
               --memory-threshold-mb <n>     Memory growth threshold in MB (default: 0)

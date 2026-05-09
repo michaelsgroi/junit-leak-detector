@@ -9,9 +9,9 @@ import java.util.concurrent.TimeUnit
 /**
  * Verifies the standalone attribution CLI produces the same output as the inline
  * AttributionRunner (which the library invokes at testPlanExecutionFinished). We
- * run the basic suite once to produce raw-report-<ts>.json + leak-summary-<ts>.txt,
+ * run the basic suite once to produce raw-report-<ts>.json + leak-summary-<ts>.html,
  * then invoke the CLI against the raw report — the CLI writes its own
- * leak-summary-<ts2>.txt, which we compare line-for-line against the inline one.
+ * leak-summary-<ts2>.html, which we compare line-for-line against the inline one.
  */
 class CliScenarioIT {
     @Test
@@ -29,14 +29,14 @@ class CliScenarioIT {
         // at target/resource-leak-detector so output files don't accumulate in the
         // module root.
         val rawReport = pickFirstByPrefix(outputDir, "raw-report-", ".json")
-        val inlineSummary = pickFirstByPrefix(outputDir, "leak-summary-", ".txt")
+        val inlineSummary = pickFirstByPrefix(outputDir, "leak-summary-", ".html")
         assertTrue(rawReport != null, "expected raw-report-*.json under ${outputDir.absolutePath}")
-        assertTrue(inlineSummary != null, "expected leak-summary-*.txt under ${outputDir.absolutePath}")
+        assertTrue(inlineSummary != null, "expected leak-summary-*.html under ${outputDir.absolutePath}")
 
-        // Run the CLI against the raw report. It writes a new leak-summary-<ts2>.txt
+        // Run the CLI against the raw report. It writes a new leak-summary-<ts2>.html
         // next to the input. Capture the path from stdout so we don't have to hunt.
         val classpath = cliClasspath()
-        val process =
+        val pb =
             ProcessBuilder(
                 javaExecutable(),
                 "-cp",
@@ -46,7 +46,8 @@ class CliScenarioIT {
                 "--memory-threshold-mb",
                 "5", // matches the basic suite's resource-leak-detector.properties
             ).redirectErrorStream(true)
-                .start()
+        pb.environment()["JUNIT_LEAK_DETECTOR_NO_OPEN"] = "1"
+        val process = pb.start()
         val cliOutput = process.inputStream.bufferedReader().readText()
         val finished = process.waitFor(2, TimeUnit.MINUTES)
         check(finished) { "CLI invocation timed out" }

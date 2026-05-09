@@ -85,7 +85,7 @@ class AttributionRunnerTest {
     }
 
     @Test
-    fun `runInline writes leak-summary text alongside the raw report`(
+    fun `runInline writes leak-summary HTML alongside the raw report`(
         @TempDir tempDir: Path,
     ) {
         val paths = reportPaths(tempDir.toFile())
@@ -94,10 +94,11 @@ class AttributionRunnerTest {
         AttributionRunner(reportPaths = paths, configuration = config()).runInline()
 
         assertTrue(paths.leakSummary.exists(), "leak-summary file should be written next to raw report")
-        val text = paths.leakSummary.readText()
-        assertTrue(text.contains("Network Port Leaks:"))
-        assertTrue(text.contains("Port: 8080"))
-        assertTrue(text.contains("com.A"))
+        val html = paths.leakSummary.readText()
+        assertTrue(html.contains("<!DOCTYPE html>"))
+        assertTrue(html.contains("Network Port Leaks"))
+        assertTrue(html.contains("8080"))
+        assertTrue(html.contains("com.A"))
     }
 
     @Test

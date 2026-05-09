@@ -25,7 +25,7 @@ class OrchestratorScenarioIT {
         outputDir.deleteRecursively()
 
         val classpath = orchestratorClasspath(repoRoot)
-        val process =
+        val pb =
             ProcessBuilder(
                 javaExecutable(),
                 "-cp",
@@ -42,7 +42,8 @@ class OrchestratorScenarioIT {
                 "--memory-threshold-mb",
                 "5",
             ).redirectErrorStream(true)
-                .start()
+        pb.environment()["JUNIT_LEAK_DETECTOR_NO_OPEN"] = "1"
+        val process = pb.start()
         val output = process.inputStream.bufferedReader().readText()
         val finished = process.waitFor(15, TimeUnit.MINUTES)
         check(finished) { "orchestrator timed out" }
@@ -66,7 +67,7 @@ class OrchestratorScenarioIT {
                 ?.firstOrNull()
         val finalReport =
             outputDir
-                .listFiles { _, name -> name.startsWith("leak-summary-") && name.endsWith(".txt") }
+                .listFiles { _, name -> name.startsWith("leak-summary-") && name.endsWith(".html") }
                 ?.firstOrNull()
         assertTrue(rawReport1?.isFile == true, "expected raw-report-1-*.json under ${outputDir.absolutePath}")
         assertTrue(rawReport2?.isFile == true, "expected raw-report-2-*.json under ${outputDir.absolutePath}")

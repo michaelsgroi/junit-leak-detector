@@ -2,6 +2,7 @@ package com.salesforce.test.leakdetector.orchestrator
 
 import com.salesforce.test.leakdetector.attribution.Attribution
 import com.salesforce.test.leakdetector.attribution.FinalReportRenderer
+import com.salesforce.test.leakdetector.attribution.HtmlOpener
 import com.salesforce.test.leakdetector.attribution.RawReportReader
 import java.io.File
 import java.io.PrintStream
@@ -49,7 +50,7 @@ object OrchestratorMain {
         val timestamp = timestampNow()
         val rawReport1 = File(outputDir, "raw-report-1-$timestamp.json")
         val rawReport2 = File(outputDir, "raw-report-2-$timestamp.json")
-        val leakSummaryFile = File(outputDir, "leak-summary-$timestamp.txt")
+        val leakSummaryFile = File(outputDir, "leak-summary-$timestamp.html")
 
         val seed = parsed.seed ?: System.currentTimeMillis()
         out.println("Orchestrator: project=${parsed.projectRoot.absolutePath}, runs=${parsed.runs}, seed=$seed")
@@ -86,9 +87,9 @@ object OrchestratorMain {
                 err.println("Error building final report: ${e.message}")
                 return ERROR_EXIT_CODE
             }
-        val text = FinalReportRenderer.renderText(finalReport)
-        leakSummaryFile.writeText(text)
+        leakSummaryFile.writeText(FinalReportRenderer.renderHtml(finalReport))
         out.println("Wrote leak summary to ${leakSummaryFile.absolutePath}")
+        HtmlOpener.open(leakSummaryFile)
         return 0
     }
 
@@ -279,7 +280,7 @@ object OrchestratorMain {
               --runs <1|2>                Number of runs (default: 2). 1 runs only run 1.
               --seed <long>               Seed for run 2's random order (default: current time millis)
               --output-dir <dir>          Where to put raw-report-1-<ts>.json,
-                                          raw-report-2-<ts>.json, leak-summary-<ts>.txt
+                                          raw-report-2-<ts>.json, leak-summary-<ts>.html
                                           (default: the project root)
               --memory-threshold-mb <n>   Memory growth threshold in MB for attribution (default: 0)
               -h, --help                  Show this help

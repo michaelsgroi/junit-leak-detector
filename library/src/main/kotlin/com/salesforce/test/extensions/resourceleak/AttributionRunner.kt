@@ -23,12 +23,13 @@ class AttributionRunner(
         val thresholdBytes = configuration.memoryGrowthThresholdMb * BYTES_PER_MB
         val finalReport = Attribution.attributeSingleRun(rawReport, memoryGrowthThresholdBytes = thresholdBytes)
 
-        val text = FinalReportRenderer.renderText(finalReport)
-        text.lineSequence().forEach { LOG.info(it) }
+        // Log a plain-text version of the report to the console; write the HTML
+        // version to disk for the user to open in a browser.
+        FinalReportRenderer.renderText(finalReport).lineSequence().forEach { LOG.info(it) }
 
         val summaryFile = reportPaths.leakSummary
         summaryFile.parentFile?.mkdirs()
-        summaryFile.writeText(text)
+        summaryFile.writeText(FinalReportRenderer.renderHtml(finalReport))
 
         checkBuildFailure(finalReport)
     }

@@ -244,7 +244,7 @@ Each snapshot records the full resource set observed at that boundary. Discrete 
 
 Estimated size for the zos suite (~841 test classes, per-class snapshots): ~60 KB/snapshot × ~1,684 snapshots ≈ ~100 MB per run. Acceptable for v1; revisit with delta encoding or compression if it becomes unwieldy in practice.
 
-A separate human-readable text summary is written alongside as `leak-summary-<ISO-timestamp>.txt` (sibling of the raw report, sharing the same timestamp). The summary mirrors the logged output and serves as the user-facing leak report; the raw report is the machine-readable contract consumed by C3.
+A self-contained HTML summary is written alongside as `leak-summary-<ISO-timestamp>.html` (sibling of the raw report, sharing the same timestamp). The summary mirrors the logged output and serves as the user-facing leak report; the raw report is the machine-readable contract consumed by C3. The library also logs a plain-text version of the summary at INFO level so it shows up in CI build logs. The library inline path does not auto-open the HTML — running tests should not open browser tabs as a side effect.
 
 ### Streaming write
 
@@ -288,7 +288,7 @@ When double-run mode is selected (`--runs 2`, the default), the orchestrator inv
 Outputs (under `--output-dir`, which defaults to `<project>/target/resource-leak-detector/orchestrator-<uuid>/`):
 1. Run 1: `raw-report-1.json`
 2. Run 2: `raw-report-2.json`
-3. Final intersected leak summary: `leak-summary-<ts>.txt` (all three files share the same `<ts>`)
+3. Final intersected leak summary: `leak-summary-<ts>.html` (all three files share the same `<ts>`); opened in the default browser unless `JUNIT_LEAK_DETECTOR_NO_OPEN=1` is set
 
 The orchestrator is a thin coordinator. The actual capture work is done by the library in each `mvn test` invocation. The library is unaware of run pairing — it just writes one raw report per JVM lifetime; the orchestrator reads both and invokes the attribution module's `intersectAcrossRuns` directly (no sub-process needed; orchestrator and attribution are in the same JVM).
 
@@ -300,7 +300,7 @@ Single-run mode (`--runs 1`) is supported for cases where users just want the or
 
 Build failure on detected leaks is **the library's job**, applied at normal `mvn test` time by the inline `AttributionRunner` based on `resource.leak.detector.build.failure.resource.types`. That's the CI gate.
 
-The orchestrator is a separate use case — investigation/isolation. Someone runs it manually (or from a CI investigation job) to get sharper attribution after a CI build has already failed or to proactively analyze a suite. **The orchestrator does not impose its own build-failure decision**; it produces two raw reports and a final intersected `leak-summary-<ts>.txt` and exits 0 on a clean orchestration regardless of what the suite did.
+The orchestrator is a separate use case — investigation/isolation. Someone runs it manually (or from a CI investigation job) to get sharper attribution after a CI build has already failed or to proactively analyze a suite. **The orchestrator does not impose its own build-failure decision**; it produces two raw reports and a final intersected `leak-summary-<ts>.html` and exits 0 on a clean orchestration regardless of what the suite did.
 
 To prevent the library's per-run trigger from short-circuiting run 1 before run 2 gets a chance to run, the orchestrator passes `-Dresource.leak.detector.build.failure.resource.types=` (empty) on each sub-process `mvn test` invocation. Whatever the consuming project has configured for build failure is overridden to empty for these orchestrator-driven runs. The orchestrator does not read or honor `build.failure.resource.types` from its own JVM either.
 
@@ -440,7 +440,7 @@ preclass.settle.poll.interval.seconds=1
 | `preclass.settle.enabled` | `false` | When `true`, the extension waits for threads/ports that appeared during the previous class to clear before snapshotting at the next class's `BeforeAll`. |
 | `preclass.settle.max.seconds` | `10` | Maximum total time to wait for carry-over resources to clear. |
 | `preclass.settle.poll.interval.seconds` | `1` | Poll interval while waiting. |
-| `report.output.dir` | the JVM's working directory | Directory where `raw-report-<ts>.json` and `leak-summary-<ts>.txt` are written. Both files share the same ISO-8601-seconds timestamp suffix. |
+| `report.output.dir` | the JVM's working directory | Directory where `raw-report-<ts>.json` and `leak-summary-<ts>.html` are written. Both files share the same ISO-8601-seconds timestamp suffix. |
 
 When the Maven dependency is commented out to disable the component, the properties file remains on disk unused.
 

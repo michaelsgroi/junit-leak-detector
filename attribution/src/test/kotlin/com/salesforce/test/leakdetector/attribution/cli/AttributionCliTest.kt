@@ -44,11 +44,12 @@ class AttributionCliTest {
 
         assertEquals(0, exit)
         val summary = leakSummaryNextTo(report)
-        assertTrue(summary != null && summary.exists(), "expected a leak-summary-*.txt next to the input")
-        val text = summary!!.readText()
-        assertTrue(text.contains("Network Port Leaks:"), text)
-        assertTrue(text.contains("Port: 8080"), text)
-        assertTrue(text.contains("com.A"), text)
+        assertTrue(summary != null && summary.exists(), "expected a leak-summary-*.html next to the input")
+        val html = summary!!.readText()
+        assertTrue(html.contains("<!DOCTYPE html>"))
+        assertTrue(html.contains("Network Port Leaks"))
+        assertTrue(html.contains("8080"))
+        assertTrue(html.contains("com.A"))
         assertTrue(out.text.contains("Wrote leak summary to "), "expected the path to be logged")
     }
 
@@ -67,16 +68,16 @@ class AttributionCliTest {
         assertTrue(summary != null && summary.exists())
         // Run 1 attributes 8080 to com.A; run 2 attributes 8080 to com.B; intersection is empty,
         // so the union (com.A and com.B) is used and the defect indicator fires.
-        val text = summary!!.readText()
-        assertTrue(text.contains("Port: 8080"))
-        assertTrue(text.contains("DEFECT"))
-        assertTrue(text.contains("com.A"))
-        assertTrue(text.contains("com.B"))
+        val html = summary!!.readText()
+        assertTrue(html.contains("8080"))
+        assertTrue(html.contains("DEFECT"))
+        assertTrue(html.contains("com.A"))
+        assertTrue(html.contains("com.B"))
     }
 
     private fun leakSummaryNextTo(rawReport: File): File? =
         rawReport.parentFile
-            ?.listFiles { _, name -> name.startsWith("leak-summary-") && name.endsWith(".txt") }
+            ?.listFiles { _, name -> name.startsWith("leak-summary-") && name.endsWith(".html") }
             ?.firstOrNull()
 
     @Test

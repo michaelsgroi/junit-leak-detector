@@ -79,4 +79,80 @@ class FinalReportRendererTest {
         assertTrue(text.contains("Increase: 400 MB"))
         assertTrue(text.contains("com.B"))
     }
+
+    @Test
+    fun `renderHtml emits a self-contained document with the same data`() {
+        val report =
+            FinalReport(
+                discreteLeaks =
+                    listOf(
+                        DiscreteLeak(
+                            resourceType = "ports",
+                            resourceKey = "8080",
+                            displayValue = "8080",
+                            detectionWindow = DetectionWindow(t0, t0.plusSeconds(1)),
+                            candidateSet = listOf(CandidateClass("com.A", t0, t0.plusSeconds(1))),
+                            emptyCandidateSetDefect = false,
+                        ),
+                    ),
+                memoryLeaks = emptyList(),
+            )
+        val html = FinalReportRenderer.renderHtml(report)
+        assertTrue(html.startsWith("<!DOCTYPE html>"))
+        assertTrue(html.contains("<title>Resource Leak Detector Report</title>"))
+        assertTrue(html.contains("<h2>Network Port Leaks</h2>"))
+        assertTrue(html.contains("8080"))
+        assertTrue(html.contains("com.A"))
+        assertTrue(html.endsWith("</html>\n"))
+    }
+
+    @Test
+    fun `renderHtml escapes HTML metacharacters`() {
+        val report =
+            FinalReport(
+                discreteLeaks =
+                    listOf(
+                        DiscreteLeak(
+                            resourceType = "systemprops",
+                            resourceKey = "<script>alert(1)</script>",
+                            displayValue = "<script>alert(1)</script>",
+                            detectionWindow = DetectionWindow(null, t0),
+                            candidateSet = listOf(CandidateClass("com.\"Tricky\"", t0, t0)),
+                            emptyCandidateSetDefect = false,
+                        ),
+                    ),
+                memoryLeaks = emptyList(),
+            )
+        val html = FinalReportRenderer.renderHtml(report)
+        assertTrue(html.contains("&lt;script&gt;"))
+        assertTrue(!html.contains("<script>alert(1)</script>"))
+        assertTrue(html.contains("com.&quot;Tricky&quot;"))
+    }
+
+    @Test
+    fun `renderHtml shows defect indicator when candidate set was empty`() {
+        val report =
+            FinalReport(
+                discreteLeaks =
+                    listOf(
+                        DiscreteLeak(
+                            resourceType = "threads",
+                            resourceKey = "x#1",
+                            displayValue = "x (ID: 1)",
+                            detectionWindow = DetectionWindow(null, t0),
+                            candidateSet = emptyList(),
+                            emptyCandidateSetDefect = true,
+                        ),
+                    ),
+                memoryLeaks = emptyList(),
+            )
+        val html = FinalReportRenderer.renderHtml(report)
+        assertTrue(html.contains("DEFECT"))
+    }
+
+    @Test
+    fun `renderHtml says no leaks detected when both lists are empty`() {
+        val html = FinalReportRenderer.renderHtml(FinalReport(emptyList(), emptyList()))
+        assertTrue(html.contains("No leaks detected"))
+    }
 }
