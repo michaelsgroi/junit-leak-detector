@@ -1,0 +1,36 @@
+# Maven build output
+target/
+
+# IDE: IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# IDE: VS Code / Eclipse
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime artifacts
+dynamodb-local-metadata.json
+
+# Leak detector output produced when running the library's own unit tests
+# (default report.output.dir = JVM working dir). Project-level test runs that
+# enable the detector will produce these in the module root.
+raw-report-*.json
+leak-summary-*.html
+leak-summary-*.txt
+forks/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*~
