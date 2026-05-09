@@ -30,7 +30,7 @@ class RawReportWriterTest {
                 timestamp = ts,
                 testClass = null,
                 testMethod = null,
-                discrete = mapOf(ResourceId.ThreadId::class to setOf(ResourceId.ThreadId("main", 1L))),
+                discrete = mapOf(ResourceType.THREADS to setOf(ResourceId.ThreadId("main", 1L))),
                 numeric = emptyMap(),
             ),
         )

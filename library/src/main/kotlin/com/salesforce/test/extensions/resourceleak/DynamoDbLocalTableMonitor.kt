@@ -11,7 +11,7 @@ class DynamoDbLocalTableMonitor(
     port: Int = System.getProperty("EMBEDDED_DYNAMO_PORT", "8888").toInt(),
 ) : DiscreteResourceMonitor {
     private val log = LoggerFactory.getLogger(javaClass)
-    override val resourceIdClass = ResourceId.DynamoDbTableId::class
+    override val resourceType = ResourceType.DDBTABLES
     private val client: DynamoDbClient =
         DynamoDbClient
             .builder()

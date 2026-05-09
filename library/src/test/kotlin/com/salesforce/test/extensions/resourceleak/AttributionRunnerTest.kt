@@ -35,7 +35,7 @@ class AttributionRunnerTest {
                 timestamp = Instant.parse("2024-01-01T00:00:00Z"),
                 testClass = null,
                 testMethod = null,
-                discrete = mapOf(ResourceId.PortId::class to emptySet()),
+                discrete = mapOf(ResourceType.PORTS to emptySet()),
                 numeric = emptyMap(),
             ),
         )
@@ -45,7 +45,7 @@ class AttributionRunnerTest {
                 timestamp = Instant.parse("2024-01-01T00:00:01Z"),
                 testClass = "com.A",
                 testMethod = null,
-                discrete = mapOf(ResourceId.PortId::class to emptySet()),
+                discrete = mapOf(ResourceType.PORTS to emptySet()),
                 numeric = emptyMap(),
             ),
         )
@@ -55,7 +55,7 @@ class AttributionRunnerTest {
                 timestamp = Instant.parse("2024-01-01T00:00:02Z"),
                 testClass = "com.A",
                 testMethod = null,
-                discrete = mapOf(ResourceId.PortId::class to setOf(ResourceId.PortId(8080))),
+                discrete = mapOf(ResourceType.PORTS to setOf(ResourceId.PortId(8080))),
                 numeric = emptyMap(),
             ),
         )
@@ -65,7 +65,7 @@ class AttributionRunnerTest {
                 timestamp = Instant.parse("2024-01-01T00:00:03Z"),
                 testClass = null,
                 testMethod = null,
-                discrete = mapOf(ResourceId.PortId::class to setOf(ResourceId.PortId(8080))),
+                discrete = mapOf(ResourceType.PORTS to setOf(ResourceId.PortId(8080))),
                 numeric = emptyMap(),
             ),
         )

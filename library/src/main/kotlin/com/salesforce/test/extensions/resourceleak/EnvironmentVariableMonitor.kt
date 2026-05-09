@@ -1,7 +1,7 @@
 package com.salesforce.test.extensions.resourceleak
 
 class EnvironmentVariableMonitor : DiscreteResourceMonitor {
-    override val resourceIdClass = ResourceId.EnvironmentVariableId::class
+    override val resourceType = ResourceType.ENV_VARS
 
     override fun snapshot(): Set<ResourceId> =
         System

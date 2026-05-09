@@ -1,7 +1,6 @@
 package com.salesforce.test.extensions.resourceleak
 
 import java.time.Instant
-import kotlin.reflect.KClass
 
 enum class SnapshotKind { BASELINE, BEFORE_ALL, BEFORE_EACH, AFTER_EACH, AFTER_ALL, FINAL }
 
@@ -10,6 +9,6 @@ data class Snapshot(
     val timestamp: Instant,
     val testClass: String?,
     val testMethod: String?,
-    val discrete: Map<KClass<out ResourceId>, Set<ResourceId>>,
+    val discrete: Map<ResourceType, Set<ResourceId>>,
     val numeric: Map<String, NumericResourceMeasurement>,
 )

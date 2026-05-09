@@ -24,44 +24,44 @@ class ResourceStateDiscreteResourceTest {
                 ResourceId.PropertyId("prop2"),
             )
 
-        resourceState.recordBaselineDiscrete(ResourceId.PropertyId::class, resources)
+        resourceState.recordBaselineDiscrete(ResourceType.SYSTEM_PROPS, resources)
 
-        assertEquals(resources, resourceState.getBaselineDiscrete(ResourceId.PropertyId::class))
-        assertEquals(resources, resourceState.getCurrentDiscrete(ResourceId.PropertyId::class))
+        assertEquals(resources, resourceState.getBaselineDiscrete(ResourceType.SYSTEM_PROPS))
+        assertEquals(resources, resourceState.getCurrentDiscrete(ResourceType.SYSTEM_PROPS))
     }
 
     @Test
     fun `updateCurrentDiscrete replaces current without affecting baseline`() {
         val baseline = setOf<ResourceId>(ResourceId.PropertyId("prop1"))
-        resourceState.recordBaselineDiscrete(ResourceId.PropertyId::class, baseline)
+        resourceState.recordBaselineDiscrete(ResourceType.SYSTEM_PROPS, baseline)
 
         val updated =
             setOf<ResourceId>(
                 ResourceId.PropertyId("prop1"),
                 ResourceId.PropertyId("leaked"),
             )
-        resourceState.updateCurrentDiscrete(ResourceId.PropertyId::class, updated)
+        resourceState.updateCurrentDiscrete(ResourceType.SYSTEM_PROPS, updated)
 
-        assertEquals(baseline, resourceState.getBaselineDiscrete(ResourceId.PropertyId::class))
-        assertEquals(updated, resourceState.getCurrentDiscrete(ResourceId.PropertyId::class))
+        assertEquals(baseline, resourceState.getBaselineDiscrete(ResourceType.SYSTEM_PROPS))
+        assertEquals(updated, resourceState.getCurrentDiscrete(ResourceType.SYSTEM_PROPS))
     }
 
     @Test
     fun `update for one type does not affect other types`() {
         val properties = setOf<ResourceId>(ResourceId.PropertyId("prop1"))
         val threads = setOf<ResourceId>(ResourceId.ThreadId("main", 1))
-        resourceState.recordBaselineDiscrete(ResourceId.PropertyId::class, properties)
-        resourceState.recordBaselineDiscrete(ResourceId.ThreadId::class, threads)
+        resourceState.recordBaselineDiscrete(ResourceType.SYSTEM_PROPS, properties)
+        resourceState.recordBaselineDiscrete(ResourceType.THREADS, threads)
 
-        resourceState.updateCurrentDiscrete(ResourceId.PropertyId::class, emptySet())
+        resourceState.updateCurrentDiscrete(ResourceType.SYSTEM_PROPS, emptySet())
 
-        assertEquals(emptySet<ResourceId>(), resourceState.getCurrentDiscrete(ResourceId.PropertyId::class))
-        assertEquals(threads, resourceState.getCurrentDiscrete(ResourceId.ThreadId::class))
+        assertEquals(emptySet<ResourceId>(), resourceState.getCurrentDiscrete(ResourceType.SYSTEM_PROPS))
+        assertEquals(threads, resourceState.getCurrentDiscrete(ResourceType.THREADS))
     }
 
     @Test
     fun `getCurrentDiscrete returns empty set for unknown type`() {
-        assertEquals(emptySet<ResourceId>(), resourceState.getCurrentDiscrete(ResourceId.PortId::class))
+        assertEquals(emptySet<ResourceId>(), resourceState.getCurrentDiscrete(ResourceType.PORTS))
     }
 
     @Test

@@ -1,7 +1,6 @@
 package com.salesforce.test.extensions.resourceleak
 
 import java.time.Instant
-import kotlin.reflect.KClass
 
 typealias TestClassName = String
 
@@ -18,8 +17,8 @@ data class TestMethodKey(
 class ResourceState {
     private val testClassLifecycles = mutableMapOf<TestClassName, TestClassLifecycle>()
     private val testMethodLifecycles = mutableMapOf<TestMethodKey, TestClassLifecycle>()
-    private val baselineDiscrete = mutableMapOf<KClass<out ResourceId>, Set<ResourceId>>()
-    private val currentDiscrete = mutableMapOf<KClass<out ResourceId>, Set<ResourceId>>()
+    private val baselineDiscrete = mutableMapOf<ResourceType, Set<ResourceId>>()
+    private val currentDiscrete = mutableMapOf<ResourceType, Set<ResourceId>>()
     private var baselineNumeric: NumericResourceMeasurement? = null
     private var currentNumeric: NumericResourceMeasurement? = null
 
@@ -58,23 +57,23 @@ class ResourceState {
     fun getAllTestMethodLifecycles(): Map<TestMethodKey, TestClassLifecycle> = testMethodLifecycles.toMap()
 
     fun recordBaselineDiscrete(
-        resourceIdType: KClass<out ResourceId>,
+        resourceType: ResourceType,
         resources: Set<ResourceId>,
     ) {
-        baselineDiscrete[resourceIdType] = resources.toSet()
-        currentDiscrete[resourceIdType] = resources.toSet()
+        baselineDiscrete[resourceType] = resources.toSet()
+        currentDiscrete[resourceType] = resources.toSet()
     }
 
     fun updateCurrentDiscrete(
-        resourceIdType: KClass<out ResourceId>,
+        resourceType: ResourceType,
         resources: Set<ResourceId>,
     ) {
-        currentDiscrete[resourceIdType] = resources.toSet()
+        currentDiscrete[resourceType] = resources.toSet()
     }
 
-    fun getBaselineDiscrete(resourceIdType: KClass<out ResourceId>): Set<ResourceId> = baselineDiscrete[resourceIdType].orEmpty()
+    fun getBaselineDiscrete(resourceType: ResourceType): Set<ResourceId> = baselineDiscrete[resourceType].orEmpty()
 
-    fun getCurrentDiscrete(resourceIdType: KClass<out ResourceId>): Set<ResourceId> = currentDiscrete[resourceIdType].orEmpty()
+    fun getCurrentDiscrete(resourceType: ResourceType): Set<ResourceId> = currentDiscrete[resourceType].orEmpty()
 
     fun recordBaselineNumeric(measurement: NumericResourceMeasurement) {
         baselineNumeric = measurement

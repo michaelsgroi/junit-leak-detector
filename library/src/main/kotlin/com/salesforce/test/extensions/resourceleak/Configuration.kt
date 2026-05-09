@@ -37,6 +37,15 @@ class Configuration(
     val rawReportOutputPath: String
         get() = read("raw.report.output.path") ?: "target/resource-leak-detector/raw-report.json"
 
+    val preclassSettleEnabled: Boolean
+        get() = read("preclass.settle.enabled")?.toBooleanStrictOrNull() ?: false
+
+    val preclassSettleMaxSeconds: Long
+        get() = read("preclass.settle.max.seconds")?.toLong() ?: 10L
+
+    val preclassSettlePollIntervalSeconds: Long
+        get() = read("preclass.settle.poll.interval.seconds")?.toLong() ?: 1L
+
     private fun read(key: String): String? {
         val systemValue = systemPropertyLookup(SYSTEM_PROPERTY_PREFIX + key)
         if (!systemValue.isNullOrBlank()) {

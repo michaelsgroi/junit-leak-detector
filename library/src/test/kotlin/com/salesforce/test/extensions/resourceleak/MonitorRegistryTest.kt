@@ -30,9 +30,9 @@ class MonitorRegistryTest {
 
         registry.captureBaseline()
 
-        val baseline = state.getBaselineDiscrete(ResourceId.PropertyId::class)
+        val baseline = state.getBaselineDiscrete(ResourceType.SYSTEM_PROPS)
         assertTrue(baseline.contains(ResourceId.PropertyId("test.property.baseline")))
-        assertEquals(baseline, state.getCurrentDiscrete(ResourceId.PropertyId::class))
+        assertEquals(baseline, state.getCurrentDiscrete(ResourceType.SYSTEM_PROPS))
     }
 
     @Test
@@ -41,16 +41,16 @@ class MonitorRegistryTest {
         val clock = TestClock(0L)
         val registry = MonitorRegistry(state, clock, configuration = configWith("systemprops"))
         registry.captureBaseline()
-        val baseline = state.getBaselineDiscrete(ResourceId.PropertyId::class)
+        val baseline = state.getBaselineDiscrete(ResourceType.SYSTEM_PROPS)
 
         clock.advanceMillis(5)
         System.setProperty("test.property.leaked", "v")
         registry.snapshotAll()
 
-        val current = state.getCurrentDiscrete(ResourceId.PropertyId::class)
+        val current = state.getCurrentDiscrete(ResourceType.SYSTEM_PROPS)
         assertTrue(current.contains(ResourceId.PropertyId("test.property.leaked")))
         assertFalse(baseline.contains(ResourceId.PropertyId("test.property.leaked")))
-        assertEquals(baseline, state.getBaselineDiscrete(ResourceId.PropertyId::class))
+        assertEquals(baseline, state.getBaselineDiscrete(ResourceType.SYSTEM_PROPS))
     }
 
     @Test

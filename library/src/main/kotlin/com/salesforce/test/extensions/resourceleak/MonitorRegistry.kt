@@ -82,14 +82,12 @@ class MonitorRegistry(
         )
     }
 
-    private fun collectDiscrete(
-        record: (kotlin.reflect.KClass<out ResourceId>, Set<ResourceId>) -> Unit,
-    ): Map<kotlin.reflect.KClass<out ResourceId>, Set<ResourceId>> {
-        val out = mutableMapOf<kotlin.reflect.KClass<out ResourceId>, Set<ResourceId>>()
+    private fun collectDiscrete(record: (ResourceType, Set<ResourceId>) -> Unit): Map<ResourceType, Set<ResourceId>> {
+        val out = mutableMapOf<ResourceType, Set<ResourceId>>()
         discreteMonitors.forEach { monitor ->
             val ids = monitor.snapshot()
-            record(monitor.resourceIdClass, ids)
-            out[monitor.resourceIdClass] = ids
+            record(monitor.resourceType, ids)
+            out[monitor.resourceType] = ids
         }
         return out
     }
@@ -105,6 +103,15 @@ class MonitorRegistry(
     }
 
     fun hasAny(): Boolean = discreteMonitors.isNotEmpty() || numericMonitors.isNotEmpty()
+
+    /**
+     * Probes the current state of the named discrete monitors without recording the result
+     * to ResourceState or emitting a snapshot record. Used by the pre-class settle wait.
+     */
+    fun probeDiscrete(types: Set<ResourceType>): Map<ResourceType, Set<ResourceId>> =
+        discreteMonitors
+            .filter { it.resourceType in types }
+            .associate { it.resourceType to it.snapshot() }
 
     private fun requireRuntimeClass(
         className: String,

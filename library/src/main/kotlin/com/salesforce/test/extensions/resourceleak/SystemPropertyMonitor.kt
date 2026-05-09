@@ -1,7 +1,7 @@
 package com.salesforce.test.extensions.resourceleak
 
 class SystemPropertyMonitor : DiscreteResourceMonitor {
-    override val resourceIdClass = ResourceId.PropertyId::class
+    override val resourceType = ResourceType.SYSTEM_PROPS
 
     override fun snapshot(): Set<ResourceId> =
         System

@@ -49,8 +49,8 @@ class RawReportJsonTest {
                     testMethod = null,
                     discrete =
                         mapOf(
-                            ResourceId.PortId::class to setOf(ResourceId.PortId(8080)),
-                            ResourceId.PropertyId::class to setOf(ResourceId.PropertyId("k")),
+                            ResourceType.PORTS to setOf(ResourceId.PortId(8080)),
+                            ResourceType.SYSTEM_PROPS to setOf(ResourceId.PropertyId("k")),
                         ),
                     numeric = mapOf("memory" to NumericResourceMeasurement(1024L, ts)),
                 ),
@@ -76,7 +76,7 @@ class RawReportJsonTest {
                     testMethod = null,
                     discrete =
                         mapOf(
-                            ResourceId.ThreadId::class to setOf(ResourceId.ThreadId("worker", 42L)),
+                            ResourceType.THREADS to setOf(ResourceId.ThreadId("worker", 42L)),
                         ),
                     numeric = emptyMap(),
                 ),

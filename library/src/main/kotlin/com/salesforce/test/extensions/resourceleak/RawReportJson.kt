@@ -1,18 +1,6 @@
 package com.salesforce.test.extensions.resourceleak
 
-import kotlin.reflect.KClass
-
 internal object RawReportJson {
-    fun resourceTypeName(resourceIdClass: KClass<out ResourceId>): String =
-        when (resourceIdClass) {
-            ResourceId.PortId::class -> ResourceType.PORTS.configValue
-            ResourceId.ThreadId::class -> ResourceType.THREADS.configValue
-            ResourceId.PropertyId::class -> ResourceType.SYSTEM_PROPS.configValue
-            ResourceId.EnvironmentVariableId::class -> ResourceType.ENV_VARS.configValue
-            ResourceId.DynamoDbTableId::class -> ResourceType.DDBTABLES.configValue
-            else -> resourceIdClass.simpleName ?: "unknown"
-        }
-
     fun encodeResourceId(id: ResourceId): String =
         when (id) {
             is ResourceId.PortId -> id.port.toString()
@@ -66,10 +54,10 @@ internal object RawReportJson {
                 ),
         )
 
-    private fun encodeDiscrete(discrete: Map<KClass<out ResourceId>, Set<ResourceId>>): String {
+    private fun encodeDiscrete(discrete: Map<ResourceType, Set<ResourceId>>): String {
         val pairs =
-            discrete.entries.map { (resourceIdClass, ids) ->
-                resourceTypeName(resourceIdClass) to array(ids.map { encodeResourceId(it) })
+            discrete.entries.map { (resourceType, ids) ->
+                resourceType.configValue to array(ids.map { encodeResourceId(it) })
             }
         return obj(*pairs.toTypedArray())
     }

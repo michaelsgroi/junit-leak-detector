@@ -4,7 +4,7 @@ import org.slf4j.LoggerFactory
 
 class PortMonitor : DiscreteResourceMonitor {
     private val log = LoggerFactory.getLogger(javaClass)
-    override val resourceIdClass = ResourceId.PortId::class
+    override val resourceType = ResourceType.PORTS
 
     override fun snapshot(): Set<ResourceId> =
         try {

@@ -110,6 +110,81 @@ class ResourceLeakMonitorTestLifecycleExtensionTest {
     }
 
     @Test
+    fun `pre-class settle is not invoked when disabled`() {
+        var settleCalls = 0
+        val fakeWaiter =
+            object : PreclassSettleWaiter(Configuration(propertiesLoader = { Properties() }, systemPropertyLookup = { null })) {
+                override fun waitForSettle(
+                    previousClassDelta: Map<ResourceType, Set<ResourceId>>,
+                    probe: (Set<ResourceType>) -> Map<ResourceType, Set<ResourceId>>,
+                ) {
+                    settleCalls++
+                }
+            }
+        val emptyRegistry = noMonitorRegistry()
+        val testee = extensionWithSettle(enabled = false, registryProvider = { emptyRegistry }, waiter = fakeWaiter)
+
+        val ctxA = createMockExtensionContext(testClass1)
+        val ctxB = createMockExtensionContext(testClass2)
+        testee.beforeAll(ctxA)
+        testee.afterAll(ctxA)
+        testee.beforeAll(ctxB)
+        testee.afterAll(ctxB)
+
+        assertEquals(0, settleCalls)
+    }
+
+    @Test
+    fun `pre-class settle is invoked at second BeforeAll when enabled`() {
+        var settleCalls = 0
+        val fakeWaiter =
+            object : PreclassSettleWaiter(Configuration(propertiesLoader = { Properties() }, systemPropertyLookup = { null })) {
+                override fun waitForSettle(
+                    previousClassDelta: Map<ResourceType, Set<ResourceId>>,
+                    probe: (Set<ResourceType>) -> Map<ResourceType, Set<ResourceId>>,
+                ) {
+                    settleCalls++
+                }
+            }
+        val emptyRegistry = noMonitorRegistry()
+        val testee = extensionWithSettle(enabled = true, registryProvider = { emptyRegistry }, waiter = fakeWaiter)
+
+        val ctxA = createMockExtensionContext(testClass1)
+        val ctxB = createMockExtensionContext(testClass2)
+        testee.beforeAll(ctxA) // first class — no previous delta yet, no wait
+        testee.afterAll(ctxA)
+        testee.beforeAll(ctxB) // second class — wait fires
+        testee.afterAll(ctxB)
+
+        assertEquals(1, settleCalls)
+    }
+
+    private fun noMonitorRegistry(): MonitorRegistry =
+        MonitorRegistry(
+            resourceState = ResourceState(),
+            clock = clock,
+            classPresent = { true },
+            configuration = Configuration(propertiesLoader = { Properties() }, systemPropertyLookup = { null }),
+            rawReportWriter = null,
+        )
+
+    private fun extensionWithSettle(
+        enabled: Boolean,
+        registryProvider: () -> MonitorRegistry?,
+        waiter: PreclassSettleWaiter,
+    ): ResourceLeakMonitorTestLifecycleExtension {
+        val props = Properties().apply { setProperty("preclass.settle.enabled", enabled.toString()) }
+        val configuration = Configuration(propertiesLoader = { props }, systemPropertyLookup = { null })
+        return ResourceLeakMonitorTestLifecycleExtension(
+            resourceState = testResourceState,
+            clock = clock,
+            configuration = configuration,
+            registryProvider = registryProvider,
+            settleWaiter = waiter,
+        )
+    }
+
+    @Test
     fun `callbacks are no-ops when no registry available`() {
         val testee = extensionWith()
         val ctx = createMockExtensionContext(testClass1)

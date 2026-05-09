@@ -1,7 +1,7 @@
 package com.salesforce.test.extensions.resourceleak
 
 class ThreadMonitor : DiscreteResourceMonitor {
-    override val resourceIdClass = ResourceId.ThreadId::class
+    override val resourceType = ResourceType.THREADS
 
     override fun snapshot(): Set<ResourceId> =
         Thread
