@@ -14,7 +14,6 @@ import uk.org.webcompere.systemstubs.properties.SystemProperties
  */
 @ExtendWith(SystemStubsExtension::class)
 class SystemPropertyControlTest {
-
     @SystemStub
     var systemProperties: SystemProperties = SystemProperties()
 

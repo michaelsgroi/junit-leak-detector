@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test
  * in the leak report.
  */
 class ThreadControlTest {
-
     @Test
     fun `thread started and joined within test does not leak`() {
         val thread = Thread({ Thread.sleep(50) }, "control-thread-ThreadControlTest")

@@ -17,28 +17,29 @@ import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType
 import java.net.URI
 
 class DynamoDbTableLeakingTest {
-
     @Test
     fun `test that leaks a DynamoDB table`() {
         client.createTable { builder ->
-            builder.tableName("leaked-by-DynamoDbTableLeakingTest")
+            builder
+                .tableName("leaked-by-DynamoDbTableLeakingTest")
                 .keySchema(
-                    KeySchemaElement.builder()
+                    KeySchemaElement
+                        .builder()
                         .attributeName("id")
                         .keyType(KeyType.HASH)
-                        .build()
-                )
-                .attributeDefinitions(
-                    AttributeDefinition.builder()
+                        .build(),
+                ).attributeDefinitions(
+                    AttributeDefinition
+                        .builder()
                         .attributeName("id")
                         .attributeType(ScalarAttributeType.S)
-                        .build()
-                )
-                .provisionedThroughput(
-                    ProvisionedThroughput.builder()
+                        .build(),
+                ).provisionedThroughput(
+                    ProvisionedThroughput
+                        .builder()
                         .readCapacityUnits(1)
                         .writeCapacityUnits(1)
-                        .build()
+                        .build(),
                 )
         }
 
@@ -48,24 +49,25 @@ class DynamoDbTableLeakingTest {
 
     companion object {
         private val PORT = System.getProperty("EMBEDDED_DYNAMO_PORT", "8888").toInt()
-        private val server = ServerRunner.createServerFromCommandLineArgs(
-            arrayOf("-inMemory", "-port", PORT.toString())
-        )
+        private val server =
+            ServerRunner.createServerFromCommandLineArgs(
+                arrayOf("-inMemory", "-port", PORT.toString()),
+            )
         private lateinit var client: DynamoDbClient
 
         @BeforeAll
         @JvmStatic
         fun setUp() {
             server.safeStart()
-            client = DynamoDbClient.builder()
-                .endpointOverride(URI.create("http://localhost:$PORT"))
-                .region(Region.US_EAST_1)
-                .credentialsProvider(
-                    StaticCredentialsProvider.create(AwsBasicCredentials.create("dummy", "dummy"))
-                )
-                .httpClient(UrlConnectionHttpClient.builder().build())
-                .build()
+            client =
+                DynamoDbClient
+                    .builder()
+                    .endpointOverride(URI.create("http://localhost:$PORT"))
+                    .region(Region.US_EAST_1)
+                    .credentialsProvider(
+                        StaticCredentialsProvider.create(AwsBasicCredentials.create("dummy", "dummy")),
+                    ).httpClient(UrlConnectionHttpClient.builder().build())
+                    .build()
         }
-
     }
 }

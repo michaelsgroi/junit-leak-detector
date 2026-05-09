@@ -10,7 +10,6 @@ import java.net.ServerSocket
  * does NOT report it as a leak.
  */
 class PortControlTest {
-
     @Test
     fun `port opened and closed within test does not leak`() {
         val socket = ServerSocket(0)

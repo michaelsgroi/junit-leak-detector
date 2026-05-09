@@ -14,7 +14,6 @@ import uk.org.webcompere.systemstubs.jupiter.SystemStubsExtension
  */
 @ExtendWith(SystemStubsExtension::class)
 class EnvironmentVariableControlTest {
-
     @SystemStub
     var environmentVariables: EnvironmentVariables = EnvironmentVariables()
 
@@ -23,7 +22,7 @@ class EnvironmentVariableControlTest {
         environmentVariables.set("CONTROL_VAR_ENVIRONMENT_VARIABLE_CONTROL_TEST", "control-value")
         assertEquals(
             "control-value",
-            System.getenv("CONTROL_VAR_ENVIRONMENT_VARIABLE_CONTROL_TEST")
+            System.getenv("CONTROL_VAR_ENVIRONMENT_VARIABLE_CONTROL_TEST"),
         )
         Thread.sleep(150)
     }

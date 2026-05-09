@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test
  * Run with: mvn test -pl zos -Dtest=SystemPropertyLeakingTest -Dresource.leak.detector.monitored.resource.types=systemprops
  */
 class SystemPropertyLeakingTest {
-
     @Test
     fun `test that leaks a system property`() {
         System.setProperty("leaked.by.SystemPropertyLeakingTest", "leaked-value")

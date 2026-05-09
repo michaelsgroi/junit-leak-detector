@@ -9,7 +9,6 @@ import java.net.ServerSocket
  * Run with: mvn test -pl zos -Dtest=PortLeakingTest -Dresource.leak.detector.monitored.resource.types=ports
  */
 class PortLeakingTest {
-
     companion object {
         // Static reference so the socket survives beyond the test method
         var leakedSocket: ServerSocket? = null
