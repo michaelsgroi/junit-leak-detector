@@ -28,11 +28,26 @@ junit-leak-detector/                     ← parent (packaging=pom)
 ├── attribution/                         ← C3: attribution module (reusable lib + standalone CLI)
 ├── orchestrator/                        ← C2: Maven plugin for double-run mode
 └── integration-tests/                   ← aggregator
-    ├── basic/
-    └── ddb/
+    ├── basic/                           ← subject suite: leaking + control test classes
+    ├── ddb/                             ← subject suite: DynamoDB Local leaking test
+    └── scenarios/                       ← failsafe-driven scenario tests (verifies basic + ddb)
 ```
 
 Only `library`, `attribution`, and `orchestrator` are publishable. `integration-tests/*` are test-only and not deployed.
+
+### Scenario testing
+
+End-to-end scenarios are verified by failsafe-driven Kotlin tests in `integration-tests/scenarios/`. Each scenario test:
+
+1. Invokes `mvn test` against one of the sibling subject modules (`integration-tests/basic` or `integration-tests/ddb`) with a specific Maven profile that configures the detector for that scenario (e.g., `build-failure`, `verify-failfast`, `multi-fork`).
+2. Captures the combined stdout/stderr from the sub-build.
+3. Asserts in JUnit/Kotlin that the expected log lines, exit code, and report contents are present.
+
+The `scenarios` module sits last in the integration-tests reactor so the library jar and the subject modules are already installed in the local Maven repo by the time failsafe fires (`mvn install` is the entry point — failsafe runs at `verify`, immediately before `install` for each module). Because of this dependency on installed artifacts, **`mvn install` is the supported full-build invocation**, not `mvn verify`.
+
+Why failsafe rather than surefire: scenario tests are slow (each spawns a child Maven process) and conceptually distinct from unit tests. Failsafe's lifecycle places them at `verify`, after the fast unit-test layer has already gated the build. The `*IT` naming convention is the standard Maven idiom failsafe picks up.
+
+Why a dedicated module rather than co-located with library tests: the scenario tests need the library jar and the subject modules to be installed before they run. Failsafe inside `library/` would fire before any sibling module is installed. A trailing module in the reactor sidesteps the chicken-and-egg.
 
 ### Packaging and Distribution
 

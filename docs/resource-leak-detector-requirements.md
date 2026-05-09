@@ -108,6 +108,12 @@ Reliable detection requires that all test classes share one JVM for the duration
 - **REQ-5.6**: The component MUST use import statements rather than fully-qualified class names where possible.
 - **REQ-5.7**: The component MUST minimize transitive dependencies. Runtime dependencies SHOULD be limited to JUnit Platform/Jupiter APIs and the platform-specific APIs required for resource detection (e.g., AWS SDK for DynamoDB Local). Convenience libraries that can be reasonably replaced with standard JDK constructs MUST NOT be added.
 
+### 6. Testing
+
+- **REQ-6.1**: Each component MUST have unit tests in the same Maven module as the code under test, run by Surefire at the `test` phase.
+- **REQ-6.2**: End-to-end scenario verification MUST be done with Kotlin/JUnit tests run by Maven Failsafe (i.e., `*IT` classes invoked at the `verify` phase). Scenario verification logic MUST NOT live in shell scripts or Makefiles.
+- **REQ-6.3**: The supported full-build invocation is `mvn install`. Scenario tests assume sibling modules are already installed in the local Maven repo, so `mvn verify` is insufficient on its own.
+
 ## Backlog
 
 Items deferred but documented for future work.
