@@ -55,13 +55,22 @@ class OrchestratorScenarioIT {
             "expected NO 'BUILD FAILURE' in sub-process output; got tail:\n${output.takeLast(4000)}",
         )
 
-        // Both raw reports + the final report exist.
-        val rawReport1 = File(outputDir, "raw-report-1.json")
-        val rawReport2 = File(outputDir, "raw-report-2.json")
-        val finalReport = File(outputDir, "leak-report.txt")
-        assertTrue(rawReport1.isFile, "expected raw-report-1.json at ${rawReport1.absolutePath}")
-        assertTrue(rawReport2.isFile, "expected raw-report-2.json at ${rawReport2.absolutePath}")
-        assertTrue(finalReport.isFile, "expected leak-report.txt at ${finalReport.absolutePath}")
+        // Both raw reports + the final report exist (filenames carry an ISO-8601 suffix).
+        val rawReport1 =
+            outputDir
+                .listFiles { _, name -> name.startsWith("raw-report-1-") && name.endsWith(".json") }
+                ?.firstOrNull()
+        val rawReport2 =
+            outputDir
+                .listFiles { _, name -> name.startsWith("raw-report-2-") && name.endsWith(".json") }
+                ?.firstOrNull()
+        val finalReport =
+            outputDir
+                .listFiles { _, name -> name.startsWith("leak-summary-") && name.endsWith(".txt") }
+                ?.firstOrNull()
+        assertTrue(rawReport1?.isFile == true, "expected raw-report-1-*.json under ${outputDir.absolutePath}")
+        assertTrue(rawReport2?.isFile == true, "expected raw-report-2-*.json under ${outputDir.absolutePath}")
+        assertTrue(finalReport?.isFile == true, "expected leak-summary-*.txt under ${outputDir.absolutePath}")
 
         // Seed used for run 2 was reported.
         assertTrue(output.contains("seed=42"), "expected orchestrator to log seed=42; got:\n$output")
@@ -71,7 +80,7 @@ class OrchestratorScenarioIT {
         // thread name (sans id) is stable; memory is one-shot. Port numbers and
         // thread IDs are different per JVM run, so port leaks may or may not appear
         // in an intersection — we don't assert on them here.
-        val text = finalReport.readText()
+        val text = finalReport!!.readText()
         listOf(
             "System Property Leaks",
             "Environment Variable Leaks",

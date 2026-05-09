@@ -9,36 +9,40 @@ import java.util.concurrent.TimeUnit
 /**
  * Verifies the standalone attribution CLI produces the same output as the inline
  * AttributionRunner (which the library invokes at testPlanExecutionFinished). We
- * do this by running the basic suite once to produce raw-report.json + leak-report.txt,
- * then running the CLI against the same raw-report.json and diffing.
+ * run the basic suite once to produce raw-report-<ts>.json + leak-summary-<ts>.txt,
+ * then invoke the CLI against the raw report — the CLI writes its own
+ * leak-summary-<ts2>.txt, which we compare line-for-line against the inline one.
  */
 class CliScenarioIT {
     @Test
-    fun `cli output matches inline leak-report dot txt for the basic suite`() {
-        // First, run the basic integration-tests module to produce raw-report.json + leak-report.txt.
+    fun `cli output matches inline leak-summary for the basic suite`() {
+        // Clear prior output before running so we deterministically pick up the
+        // raw report and inline summary produced by this run.
+        val basicModule = File(repoRoot(), "integration-tests/basic")
+        val outputDir = File(basicModule, "target/resource-leak-detector")
+        outputDir.deleteRecursively()
+
         val basic = MavenScenarioRunner.run(module = "integration-tests/basic")
         assertTrue(basic.succeeded, "basic suite should succeed; output tail:\n${basic.output.takeLast(2000)}")
 
-        val outputDir = File(basic.moduleDirectory, "target/resource-leak-detector")
-        val rawReport = File(outputDir, "raw-report.json")
-        val inlineReport = File(outputDir, "leak-report.txt")
-        assertTrue(rawReport.isFile, "expected raw report at ${rawReport.absolutePath}")
-        assertTrue(inlineReport.isFile, "expected inline report at ${inlineReport.absolutePath}")
+        // The basic suite's resource-leak-detector.properties points report.output.dir
+        // at target/resource-leak-detector so output files don't accumulate in the
+        // module root.
+        val rawReport = pickFirstByPrefix(outputDir, "raw-report-", ".json")
+        val inlineSummary = pickFirstByPrefix(outputDir, "leak-summary-", ".txt")
+        assertTrue(rawReport != null, "expected raw-report-*.json under ${outputDir.absolutePath}")
+        assertTrue(inlineSummary != null, "expected leak-summary-*.txt under ${outputDir.absolutePath}")
 
-        // Now run the CLI against the same raw report. Because the attribution module
-        // ships only as a regular jar (no fat-jar), invoke via -cp with the attribution
-        // jar plus its single transitive dep (kotlin-stdlib).
+        // Run the CLI against the raw report. It writes a new leak-summary-<ts2>.txt
+        // next to the input. Capture the path from stdout so we don't have to hunt.
         val classpath = cliClasspath()
-        val cliOutFile = File(outputDir, "leak-report-cli.txt")
         val process =
             ProcessBuilder(
                 javaExecutable(),
                 "-cp",
                 classpath,
                 "com.salesforce.test.leakdetector.attribution.cli.AttributionCli",
-                rawReport.absolutePath,
-                "-o",
-                cliOutFile.absolutePath,
+                rawReport!!.absolutePath,
                 "--memory-threshold-mb",
                 "5", // matches the basic suite's resource-leak-detector.properties
             ).redirectErrorStream(true)
@@ -48,15 +52,29 @@ class CliScenarioIT {
         check(finished) { "CLI invocation timed out" }
         assertEquals(0, process.exitValue(), "CLI exit non-zero; output:\n$cliOutput")
 
-        // Compare CLI output to the inline report. They should match line-for-line.
-        val cliText = cliOutFile.readText()
-        val inlineText = inlineReport.readText()
+        val cliSummaryPath =
+            cliOutput
+                .lineSequence()
+                .firstOrNull { it.startsWith("Wrote leak summary to ") }
+                ?.removePrefix("Wrote leak summary to ")
+                ?.trim()
+                ?: error("CLI did not log the path of its leak summary; output:\n$cliOutput")
+        val cliSummary = File(cliSummaryPath)
+        assertTrue(cliSummary.isFile, "expected CLI to produce $cliSummaryPath")
+
+        // Compare CLI output to the inline summary. They should match line-for-line.
         assertEquals(
-            inlineText.trim().lines(),
-            cliText.trim().lines(),
-            "CLI output should match inline report",
+            inlineSummary!!.readText().trim().lines(),
+            cliSummary.readText().trim().lines(),
+            "CLI summary should match inline summary",
         )
     }
+
+    private fun pickFirstByPrefix(
+        dir: File,
+        prefix: String,
+        suffix: String,
+    ): File? = dir.listFiles { _, name -> name.startsWith(prefix) && name.endsWith(suffix) }?.firstOrNull()
 
     private fun cliClasspath(): String {
         val repoRoot = repoRoot()
@@ -70,8 +88,6 @@ class CliScenarioIT {
                 }.orEmpty()
                 .firstOrNull()
                 ?: error("No attribution jar found. Run `mvn install` first.")
-        // Resolve kotlin-stdlib from the local Maven repo using the same version the
-        // parent pom pins. This avoids hard-coding a path.
         val mavenRepo = File(System.getProperty("user.home"), ".m2/repository")
         val stdlibFilter = { _: File, name: String -> name.startsWith("kotlin-stdlib-") && name.endsWith(".jar") }
         val stdlib =

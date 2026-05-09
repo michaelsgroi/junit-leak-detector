@@ -34,8 +34,8 @@ class Configuration(
                 ?.let { SnapshotGranularity.fromConfigValue(it) }
                 ?: SnapshotGranularity.CLASS
 
-    val rawReportOutputPath: String
-        get() = read("raw.report.output.path") ?: "target/resource-leak-detector/raw-report.json"
+    val reportOutputDir: String
+        get() = read("report.output.dir") ?: System.getProperty("user.dir") ?: "."
 
     val preclassSettleEnabled: Boolean
         get() = read("preclass.settle.enabled")?.toBooleanStrictOrNull() ?: false

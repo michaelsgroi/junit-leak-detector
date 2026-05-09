@@ -5,15 +5,15 @@ import com.salesforce.test.leakdetector.attribution.FinalReport
 import com.salesforce.test.leakdetector.attribution.FinalReportRenderer
 import com.salesforce.test.leakdetector.attribution.RawReportReader
 import org.slf4j.LoggerFactory
-import java.io.File
 import kotlin.system.exitProcess
 
 class AttributionRunner(
+    private val reportPaths: ReportPaths,
     private val configuration: Configuration = Configuration.instance,
     private val buildFailureAction: () -> Unit = { exitProcess(1) },
 ) {
     fun runInline() {
-        val rawReportFile = File(configuration.rawReportOutputPath)
+        val rawReportFile = reportPaths.rawReport
         if (!rawReportFile.exists()) {
             LOG.warn("Raw report missing at ${rawReportFile.absolutePath}; skipping attribution")
             return
@@ -26,9 +26,9 @@ class AttributionRunner(
         val text = FinalReportRenderer.renderText(finalReport)
         text.lineSequence().forEach { LOG.info(it) }
 
-        val textReportFile = rawReportFile.resolveSibling("leak-report.txt")
-        textReportFile.parentFile?.mkdirs()
-        textReportFile.writeText(text)
+        val summaryFile = reportPaths.leakSummary
+        summaryFile.parentFile?.mkdirs()
+        summaryFile.writeText(text)
 
         checkBuildFailure(finalReport)
     }

@@ -196,7 +196,7 @@ The delta lives as a private mutable field on `ResourceLeakMonitorTestLifecycleE
 
 ### Raw report (C1 output)
 
-The raw report is written to `target/resource-leak-detector/raw-report.json` (configurable via `raw.report.output.path`) as [JSON Lines](https://jsonlines.org/): one self-describing JSON object per line, distinguished by the `type` field. Three record types appear, in order: a single `header` line at suite start, one `snapshot` line per lifecycle callback, and a single `footer` line at suite end with the per-class lifecycle map.
+The raw report is written to `<report.output.dir>/raw-report-<ISO-timestamp>.json` (default `report.output.dir` = the JVM's working directory) as [JSON Lines](https://jsonlines.org/): one self-describing JSON object per line, distinguished by the `type` field. Three record types appear, in order: a single `header` line at suite start, one `snapshot` line per lifecycle callback, and a single `footer` line at suite end with the per-class lifecycle map. The ISO-8601-seconds timestamp suffix prevents prior runs from being overwritten.
 
 Schema:
 
@@ -244,7 +244,7 @@ Each snapshot records the full resource set observed at that boundary. Discrete 
 
 Estimated size for the zos suite (~841 test classes, per-class snapshots): ~60 KB/snapshot × ~1,684 snapshots ≈ ~100 MB per run. Acceptable for v1; revisit with delta encoding or compression if it becomes unwieldy in practice.
 
-A separate human-readable text report is written alongside as `leak-report.txt` (sibling of the raw report). The text report mirrors the existing logged output and serves as the user-facing leak summary; the raw report is the machine-readable contract consumed by C3.
+A separate human-readable text summary is written alongside as `leak-summary-<ISO-timestamp>.txt` (sibling of the raw report, sharing the same timestamp). The summary mirrors the logged output and serves as the user-facing leak report; the raw report is the machine-readable contract consumed by C3.
 
 ### Streaming write
 
@@ -283,12 +283,12 @@ When double-run mode is selected (`--runs 2`, the default), the orchestrator inv
 - `surefire.runOrder.random.seed` — recorded for run 2 (defaults to current time millis; overridable via `--seed`)
 - `forkCount=1`, `reuseForks=true` — required for cross-class leak detection
 - `junit.jupiter.extensions.autodetection.enabled=true` — required for the extension to load
-- `resource.leak.detector.raw.report.output.path` — points each run at its own output file
+- `resource.leak.detector.report.output.dir` — points each run at its own output directory; the orchestrator then renames the produced raw report into `raw-report-N-<ts>.json` alongside the final summary
 
 Outputs (under `--output-dir`, which defaults to `<project>/target/resource-leak-detector/orchestrator-<uuid>/`):
 1. Run 1: `raw-report-1.json`
 2. Run 2: `raw-report-2.json`
-3. Final intersected report: `leak-report.txt`
+3. Final intersected leak summary: `leak-summary-<ts>.txt` (all three files share the same `<ts>`)
 
 The orchestrator is a thin coordinator. The actual capture work is done by the library in each `mvn test` invocation. The library is unaware of run pairing — it just writes one raw report per JVM lifetime; the orchestrator reads both and invokes the attribution module's `intersectAcrossRuns` directly (no sub-process needed; orchestrator and attribution are in the same JVM).
 
@@ -300,7 +300,7 @@ Single-run mode (`--runs 1`) is supported for cases where users just want the or
 
 Build failure on detected leaks is **the library's job**, applied at normal `mvn test` time by the inline `AttributionRunner` based on `resource.leak.detector.build.failure.resource.types`. That's the CI gate.
 
-The orchestrator is a separate use case — investigation/isolation. Someone runs it manually (or from a CI investigation job) to get sharper attribution after a CI build has already failed or to proactively analyze a suite. **The orchestrator does not impose its own build-failure decision**; it produces two raw reports and a final intersected leak-report.txt and exits 0 on a clean orchestration regardless of what the suite did.
+The orchestrator is a separate use case — investigation/isolation. Someone runs it manually (or from a CI investigation job) to get sharper attribution after a CI build has already failed or to proactively analyze a suite. **The orchestrator does not impose its own build-failure decision**; it produces two raw reports and a final intersected `leak-summary-<ts>.txt` and exits 0 on a clean orchestration regardless of what the suite did.
 
 To prevent the library's per-run trigger from short-circuiting run 1 before run 2 gets a chance to run, the orchestrator passes `-Dresource.leak.detector.build.failure.resource.types=` (empty) on each sub-process `mvn test` invocation. Whatever the consuming project has configured for build failure is overridden to empty for these orchestrator-driven runs. The orchestrator does not read or honor `build.failure.resource.types` from its own JVM either.
 
@@ -440,7 +440,7 @@ preclass.settle.poll.interval.seconds=1
 | `preclass.settle.enabled` | `false` | When `true`, the extension waits for threads/ports that appeared during the previous class to clear before snapshotting at the next class's `BeforeAll`. |
 | `preclass.settle.max.seconds` | `10` | Maximum total time to wait for carry-over resources to clear. |
 | `preclass.settle.poll.interval.seconds` | `1` | Poll interval while waiting. |
-| `raw.report.output.path` | `target/resource-leak-detector/raw-report.json` | Path of the streaming JSON Lines raw report. The human-readable text report is written as `leak-report.txt` in the same directory. |
+| `report.output.dir` | the JVM's working directory | Directory where `raw-report-<ts>.json` and `leak-summary-<ts>.txt` are written. Both files share the same ISO-8601-seconds timestamp suffix. |
 
 When the Maven dependency is commented out to disable the component, the properties file remains on disk unused.
 

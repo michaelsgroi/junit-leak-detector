@@ -9,20 +9,28 @@ import java.time.Clock
 class ResourceLeakMonitor : TestExecutionListener {
     private var registry: MonitorRegistry? = null
     private var rawReportWriter: RawReportWriter? = null
+    private var reportPaths: ReportPaths? = null
     private val clock: Clock = Clock.systemUTC()
     private val log = LoggerFactory.getLogger(javaClass)
 
     override fun testPlanExecutionStarted(testPlan: TestPlan) {
         try {
             val configuration = Configuration.instance
-            val rawReportFile = File(configuration.rawReportOutputPath)
-            ForkDetector(markerDirectory = rawReportFile.resolveSibling("forks")).checkAndRecordFork()
-            val writer = RawReportWriter(rawReportFile)
+            val startedAt = clock.instant()
+            val paths =
+                ReportPaths(
+                    outputDir = File(configuration.reportOutputDir),
+                    timestamp = ReportPaths.timestamp(startedAt),
+                )
+            reportPaths = paths
+            paths.outputDir.mkdirs()
+            ForkDetector(markerDirectory = File(paths.outputDir, "forks")).checkAndRecordFork()
+            val writer = RawReportWriter(paths.rawReport)
             rawReportWriter = writer
             val r = MonitorRegistry(rawReportWriter = writer)
             registry = r
             writer.open(
-                startedAt = clock.instant(),
+                startedAt = startedAt,
                 monitors =
                     configuration.monitoredResourceTypes
                         .split(",")
@@ -47,7 +55,7 @@ class ResourceLeakMonitor : TestExecutionListener {
             finishedAt = clock.instant(),
             lifecycles = ResourceState.instance.getAllTestClassLifecycles(),
         )
-        AttributionRunner().runInline()
+        reportPaths?.let { AttributionRunner(reportPaths = it).runInline() }
     }
 }
 

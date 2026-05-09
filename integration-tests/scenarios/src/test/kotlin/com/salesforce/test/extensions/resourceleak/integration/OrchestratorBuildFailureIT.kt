@@ -61,13 +61,22 @@ class OrchestratorBuildFailureIT {
         val finished = process.waitFor(15, TimeUnit.MINUTES)
         check(finished) { "orchestrator timed out" }
 
-        // Both runs ran to completion.
-        val rawReport1 = File(outputDir, "raw-report-1.json")
-        val rawReport2 = File(outputDir, "raw-report-2.json")
-        val finalReport = File(outputDir, "leak-report.txt")
-        assertTrue(rawReport1.isFile, "expected raw-report-1.json (run 1 must complete)")
-        assertTrue(rawReport2.isFile, "expected raw-report-2.json (run 2 must complete)")
-        assertTrue(finalReport.isFile, "expected final leak-report.txt")
+        // Both runs ran to completion (filenames carry an ISO-8601 suffix).
+        val rawReport1 =
+            outputDir
+                .listFiles { _, name -> name.startsWith("raw-report-1-") && name.endsWith(".json") }
+                ?.firstOrNull()
+        val rawReport2 =
+            outputDir
+                .listFiles { _, name -> name.startsWith("raw-report-2-") && name.endsWith(".json") }
+                ?.firstOrNull()
+        val finalReport =
+            outputDir
+                .listFiles { _, name -> name.startsWith("leak-summary-") && name.endsWith(".txt") }
+                ?.firstOrNull()
+        assertTrue(rawReport1?.isFile == true, "expected raw-report-1-*.json (run 1 must complete)")
+        assertTrue(rawReport2?.isFile == true, "expected raw-report-2-*.json (run 2 must complete)")
+        assertTrue(finalReport?.isFile == true, "expected leak-summary-*.txt")
 
         // Neither sub-process nor the orchestrator emitted "Build failure triggered".
         // The library's per-run trigger was suppressed by the empty override; the

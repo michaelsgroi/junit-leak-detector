@@ -10,8 +10,9 @@ import java.time.Instant
 import java.util.Properties
 
 class AttributionRunnerTest {
-    private fun configWith(
-        rawReportPath: String,
+    private val timestamp = "2024-01-01T00-00-00Z"
+
+    private fun config(
         monitored: String = "ports",
         buildFailureTypes: String = "",
         memoryThresholdMb: Long = 0L,
@@ -19,12 +20,13 @@ class AttributionRunnerTest {
         val props =
             Properties().apply {
                 setProperty("monitored.resource.types", monitored)
-                setProperty("raw.report.output.path", rawReportPath)
                 setProperty("build.failure.resource.types", buildFailureTypes)
                 setProperty("memory.growth.threshold.mb", memoryThresholdMb.toString())
             }
         return Configuration(propertiesLoader = { props }, systemPropertyLookup = { null })
     }
+
+    private fun reportPaths(outputDir: File): ReportPaths = ReportPaths(outputDir, timestamp)
 
     private fun writeRawReportWithPortLeak(file: File) {
         val writer = RawReportWriter(file, runId = "r")
@@ -83,17 +85,16 @@ class AttributionRunnerTest {
     }
 
     @Test
-    fun `runInline writes leak-report text alongside the raw report`(
+    fun `runInline writes leak-summary text alongside the raw report`(
         @TempDir tempDir: Path,
     ) {
-        val rawPath = tempDir.resolve("raw.json").toFile()
-        writeRawReportWithPortLeak(rawPath)
+        val paths = reportPaths(tempDir.toFile())
+        writeRawReportWithPortLeak(paths.rawReport)
 
-        AttributionRunner(configuration = configWith(rawPath.absolutePath)).runInline()
+        AttributionRunner(reportPaths = paths, configuration = config()).runInline()
 
-        val textFile = tempDir.resolve("leak-report.txt").toFile()
-        assertTrue(textFile.exists(), "leak-report.txt should be written next to raw.json")
-        val text = textFile.readText()
+        assertTrue(paths.leakSummary.exists(), "leak-summary file should be written next to raw report")
+        val text = paths.leakSummary.readText()
         assertTrue(text.contains("Network Port Leaks:"))
         assertTrue(text.contains("Port: 8080"))
         assertTrue(text.contains("com.A"))
@@ -103,12 +104,13 @@ class AttributionRunnerTest {
     fun `runInline triggers build failure when leak resource type is in build-failure list`(
         @TempDir tempDir: Path,
     ) {
-        val rawPath = tempDir.resolve("raw.json").toFile()
-        writeRawReportWithPortLeak(rawPath)
+        val paths = reportPaths(tempDir.toFile())
+        writeRawReportWithPortLeak(paths.rawReport)
 
         var triggered = false
         AttributionRunner(
-            configuration = configWith(rawPath.absolutePath, buildFailureTypes = "ports"),
+            reportPaths = paths,
+            configuration = config(buildFailureTypes = "ports"),
             buildFailureAction = { triggered = true },
         ).runInline()
 
@@ -119,12 +121,13 @@ class AttributionRunnerTest {
     fun `runInline does not trigger build failure when leak type is not in build-failure list`(
         @TempDir tempDir: Path,
     ) {
-        val rawPath = tempDir.resolve("raw.json").toFile()
-        writeRawReportWithPortLeak(rawPath)
+        val paths = reportPaths(tempDir.toFile())
+        writeRawReportWithPortLeak(paths.rawReport)
 
         var triggered = false
         AttributionRunner(
-            configuration = configWith(rawPath.absolutePath, buildFailureTypes = "memory"),
+            reportPaths = paths,
+            configuration = config(buildFailureTypes = "memory"),
             buildFailureAction = { triggered = true },
         ).runInline()
 
@@ -135,13 +138,15 @@ class AttributionRunnerTest {
     fun `runInline is a no-op when raw report file is missing`(
         @TempDir tempDir: Path,
     ) {
-        val rawPath = tempDir.resolve("missing.json").toFile()
+        val paths = reportPaths(tempDir.toFile())
+        // No raw report written.
         var triggered = false
         AttributionRunner(
-            configuration = configWith(rawPath.absolutePath, buildFailureTypes = "ports"),
+            reportPaths = paths,
+            configuration = config(buildFailureTypes = "ports"),
             buildFailureAction = { triggered = true },
         ).runInline()
         assertFalse(triggered)
-        assertFalse(tempDir.resolve("leak-report.txt").toFile().exists())
+        assertFalse(paths.leakSummary.exists())
     }
 }

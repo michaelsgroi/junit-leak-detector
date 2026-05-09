@@ -6,6 +6,9 @@ import com.salesforce.test.leakdetector.attribution.FinalReportRenderer
 import com.salesforce.test.leakdetector.attribution.RawReportReader
 import java.io.File
 import java.io.PrintStream
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import kotlin.system.exitProcess
 
 object AttributionCli {
@@ -31,12 +34,13 @@ object AttributionCli {
             }
 
         val text = FinalReportRenderer.renderText(report)
-        if (parsed.outputFile != null) {
-            parsed.outputFile.parentFile?.mkdirs()
-            parsed.outputFile.writeText(text)
-        } else {
-            out.print(text)
-        }
+        // Always write a leak summary file next to the input raw report. Each summary
+        // gets an ISO-8601-seconds timestamp suffix so multiple invocations don't clobber.
+        val outputDir = parsed.firstReport.parentFile ?: File(".")
+        val summaryFile = File(outputDir, "leak-summary-${timestampNow()}.txt")
+        summaryFile.parentFile?.mkdirs()
+        summaryFile.writeText(text)
+        out.println("Wrote leak summary to ${summaryFile.absolutePath}")
         return 0
     }
 
@@ -60,21 +64,10 @@ object AttributionCli {
         }
 
         val positional = mutableListOf<String>()
-        var outputFile: File? = null
         var memoryThresholdMb: Long = 0L
         var i = 0
         while (i < args.size) {
             when (val arg = args[i]) {
-                "-o", "--output" -> {
-                    if (i + 1 >= args.size) {
-                        err.println("Error: $arg requires an argument")
-                        printUsage(err)
-                        return null
-                    }
-                    outputFile = File(args[i + 1])
-                    i += 2
-                }
-
                 "--memory-threshold-mb" -> {
                     if (i + 1 >= args.size) {
                         err.println("Error: $arg requires an argument")
@@ -119,7 +112,6 @@ object AttributionCli {
         return ParsedArgs(
             firstReport = first,
             secondReport = second,
-            outputFile = outputFile,
             memoryGrowthThresholdBytes = memoryThresholdMb * BYTES_PER_MB,
         )
     }
@@ -129,22 +121,25 @@ object AttributionCli {
             """
             Usage: attribution <raw-report-1> [raw-report-2] [options]
 
-            Reads one or two raw reports produced by the test runner and emits the
-            attributed leak report. With two reports, the candidate sets are
+            Reads one or two raw reports produced by the test runner and writes the
+            attributed leak summary as `leak-summary-<ISO-timestamp>.txt` next to
+            the input raw report. With two reports, the candidate sets are
             intersected across runs to produce sharper attribution.
 
             Options:
-              -o, --output <file>           Write report to file (default: stdout)
               --memory-threshold-mb <n>     Memory growth threshold in MB (default: 0)
               -h, --help                    Show this help
             """.trimIndent(),
         )
     }
 
+    private fun timestampNow(): String = FORMATTER.format(Instant.now().atOffset(ZoneOffset.UTC).toLocalDateTime()) + "Z"
+
+    private val FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH-mm-ss")
+
     private data class ParsedArgs(
         val firstReport: File,
         val secondReport: File?,
-        val outputFile: File?,
         val memoryGrowthThresholdBytes: Long,
     )
 

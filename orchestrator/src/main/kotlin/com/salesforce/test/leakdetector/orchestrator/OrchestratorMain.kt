@@ -5,7 +5,9 @@ import com.salesforce.test.leakdetector.attribution.FinalReportRenderer
 import com.salesforce.test.leakdetector.attribution.RawReportReader
 import java.io.File
 import java.io.PrintStream
-import java.util.UUID
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 import kotlin.system.exitProcess
 
@@ -18,11 +20,15 @@ import kotlin.system.exitProcess
  *
  * Each run produces its own raw report. After both runs complete the orchestrator
  * intersects the candidate sets via the attribution module and writes the final
- * leak report.
+ * leak summary.
  *
  * In both runs the orchestrator forces the Surefire isolation prerequisites
  * (forkCount=1, reuseForks=true, junit.jupiter.extensions.autodetection.enabled=true)
  * via -D system properties, so the consuming project's pom configuration is overridden.
+ *
+ * All three output files (the two raw reports and the leak summary) share the
+ * same ISO-8601-seconds timestamp suffix so they correlate at a glance and don't
+ * collide with prior runs in the same output directory.
  */
 object OrchestratorMain {
     @JvmStatic
@@ -40,9 +46,10 @@ object OrchestratorMain {
 
         val outputDir = parsed.outputDir
         outputDir.mkdirs()
-        val rawReport1 = File(outputDir, "raw-report-1.json")
-        val rawReport2 = File(outputDir, "raw-report-2.json")
-        val finalReportFile = File(outputDir, "leak-report.txt")
+        val timestamp = timestampNow()
+        val rawReport1 = File(outputDir, "raw-report-1-$timestamp.json")
+        val rawReport2 = File(outputDir, "raw-report-2-$timestamp.json")
+        val leakSummaryFile = File(outputDir, "leak-summary-$timestamp.txt")
 
         val seed = parsed.seed ?: System.currentTimeMillis()
         out.println("Orchestrator: project=${parsed.projectRoot.absolutePath}, runs=${parsed.runs}, seed=$seed")
@@ -72,9 +79,6 @@ object OrchestratorMain {
             )
         }
 
-        // Build the final report regardless of run exit codes — a non-zero exit from a
-        // run is typically the build-failure mechanism the user enabled, and we still
-        // want to emit the attributed report.
         val finalReport =
             try {
                 buildFinalReport(rawReport1, rawReport2.takeIf { parsed.runs == 2 }, parsed.memoryGrowthThresholdBytes)
@@ -83,8 +87,8 @@ object OrchestratorMain {
                 return ERROR_EXIT_CODE
             }
         val text = FinalReportRenderer.renderText(finalReport)
-        finalReportFile.writeText(text)
-        out.println("Wrote final report to ${finalReportFile.absolutePath}")
+        leakSummaryFile.writeText(text)
+        out.println("Wrote leak summary to ${leakSummaryFile.absolutePath}")
         return 0
     }
 
@@ -97,6 +101,12 @@ object OrchestratorMain {
         runLabel: String,
     ) {
         out.println("==> $runLabel")
+        // The library's RawReportWriter wants a directory; it composes the timestamped
+        // filename itself. We point it at a per-run subdirectory so each sub-process
+        // produces exactly one raw report we can identify deterministically, then we
+        // copy the produced file to the canonical raw-report-N-<ts>.json location.
+        val perRunDir = File(rawReportFile.parentFile, "_run-tmp-${rawReportFile.nameWithoutExtension}")
+        perRunDir.mkdirs()
         val args =
             buildList {
                 add(mvnExecutable())
@@ -108,9 +118,10 @@ object OrchestratorMain {
                 add("-Djunit.jupiter.extensions.autodetection.enabled=true")
                 add("-Dsurefire.runOrder=$runOrder")
                 if (runOrderRandomSeed != null) add("-Dsurefire.runOrder.random.seed=$runOrderRandomSeed")
-                add("-Dresource.leak.detector.raw.report.output.path=${rawReportFile.absolutePath}")
-                // Suppress the library's per-run build failure: the orchestrator owns
-                // the build-failure decision and applies it once after intersection.
+                add("-Dresource.leak.detector.report.output.dir=${perRunDir.absolutePath}")
+                // Suppress the library's per-run build failure: the orchestrator does
+                // not impose its own build-failure decision either; this just prevents
+                // run 1 from short-circuiting before run 2.
                 add("-Dresource.leak.detector.build.failure.resource.types=")
             }
         val process =
@@ -123,6 +134,16 @@ object OrchestratorMain {
         }
         val finished = process.waitFor(30, TimeUnit.MINUTES)
         check(finished) { "$runLabel timed out" }
+
+        // Move the library-produced raw-report-<ts>.json to our canonical name.
+        val produced =
+            perRunDir
+                .listFiles { _, name -> name.startsWith("raw-report-") && name.endsWith(".json") }
+                ?.firstOrNull()
+        if (produced != null) {
+            produced.renameTo(rawReportFile)
+        }
+        perRunDir.deleteRecursively()
     }
 
     private fun buildFinalReport(
@@ -221,8 +242,9 @@ object OrchestratorMain {
             err.println("Error: project-root must be a Maven module directory: ${projectRoot.absolutePath}")
             return null
         }
-        val resolvedOutputDir =
-            outputDir ?: File(projectRoot, "target/resource-leak-detector/orchestrator-${UUID.randomUUID()}")
+        // Default output directory is the project root itself, matching the library's
+        // inline-mode default. Users who want a tidier layout can pass --output-dir.
+        val resolvedOutputDir = outputDir ?: projectRoot
         return ParsedArgs(
             projectRoot = projectRoot,
             outputDir = resolvedOutputDir,
@@ -248,7 +270,7 @@ object OrchestratorMain {
 
             Invokes `mvn test` against the consuming module twice with different
             Surefire runOrder, then intersects the candidate sets via the attribution
-            module and writes the final leak report.
+            module and writes the final leak summary.
 
             Required:
               --project-root <dir>        Maven module to test against (must contain pom.xml)
@@ -256,9 +278,9 @@ object OrchestratorMain {
             Options:
               --runs <1|2>                Number of runs (default: 2). 1 runs only run 1.
               --seed <long>               Seed for run 2's random order (default: current time millis)
-              --output-dir <dir>          Where to put raw-report-1.json, raw-report-2.json,
-                                          leak-report.txt (default: target/resource-leak-detector/orchestrator-<uuid>
-                                          inside the project)
+              --output-dir <dir>          Where to put raw-report-1-<ts>.json,
+                                          raw-report-2-<ts>.json, leak-summary-<ts>.txt
+                                          (default: the project root)
               --memory-threshold-mb <n>   Memory growth threshold in MB for attribution (default: 0)
               -h, --help                  Show this help
 
@@ -269,6 +291,10 @@ object OrchestratorMain {
     }
 
     private fun mvnExecutable(): String = System.getenv("MAVEN_BIN") ?: "mvn"
+
+    private fun timestampNow(): String = FORMATTER.format(Instant.now().atOffset(ZoneOffset.UTC).toLocalDateTime()) + "Z"
+
+    private val FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH-mm-ss")
 
     private data class ParsedArgs(
         val projectRoot: File,

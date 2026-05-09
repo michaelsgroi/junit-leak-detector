@@ -33,7 +33,7 @@ class AttributionCliTest {
         """.trimIndent()
 
     @Test
-    fun `single-report run prints the attributed report to stdout`(
+    fun `single-report run writes a leak summary next to the input raw report`(
         @TempDir tempDir: Path,
     ) {
         val report = tempDir.resolve("raw.json").toFile().also { it.writeText(standalonePort8080Report) }
@@ -43,26 +43,13 @@ class AttributionCliTest {
         val exit = AttributionCli.run(arrayOf(report.absolutePath), out.stream, err.stream)
 
         assertEquals(0, exit)
-        val text = out.text
+        val summary = leakSummaryNextTo(report)
+        assertTrue(summary != null && summary.exists(), "expected a leak-summary-*.txt next to the input")
+        val text = summary!!.readText()
         assertTrue(text.contains("Network Port Leaks:"), text)
         assertTrue(text.contains("Port: 8080"), text)
         assertTrue(text.contains("com.A"), text)
-    }
-
-    @Test
-    fun `output flag writes the report to a file instead of stdout`(
-        @TempDir tempDir: Path,
-    ) {
-        val report = tempDir.resolve("raw.json").toFile().also { it.writeText(standalonePort8080Report) }
-        val outputFile = tempDir.resolve("report.txt").toFile()
-        val out = capture()
-
-        val exit = AttributionCli.run(arrayOf(report.absolutePath, "-o", outputFile.absolutePath), out.stream, capture().stream)
-
-        assertEquals(0, exit)
-        assertTrue(outputFile.exists())
-        assertTrue(outputFile.readText().contains("Port: 8080"))
-        assertTrue(out.text.isEmpty(), "stdout should be empty when -o is used")
+        assertTrue(out.text.contains("Wrote leak summary to "), "expected the path to be logged")
     }
 
     @Test
@@ -76,14 +63,21 @@ class AttributionCliTest {
         val exit = AttributionCli.run(arrayOf(r1.absolutePath, r2.absolutePath), out.stream, capture().stream)
 
         assertEquals(0, exit)
+        val summary = leakSummaryNextTo(r1)
+        assertTrue(summary != null && summary.exists())
         // Run 1 attributes 8080 to com.A; run 2 attributes 8080 to com.B; intersection is empty,
         // so the union (com.A and com.B) is used and the defect indicator fires.
-        val text = out.text
+        val text = summary!!.readText()
         assertTrue(text.contains("Port: 8080"))
         assertTrue(text.contains("DEFECT"))
         assertTrue(text.contains("com.A"))
         assertTrue(text.contains("com.B"))
     }
+
+    private fun leakSummaryNextTo(rawReport: File): File? =
+        rawReport.parentFile
+            ?.listFiles { _, name -> name.startsWith("leak-summary-") && name.endsWith(".txt") }
+            ?.firstOrNull()
 
     @Test
     fun `missing input file returns non-zero exit and prints error`(
