@@ -1,6 +1,6 @@
 # Resource Leak Detector - Design
 
-> **Note**: For requirements, see [resource-leak-detector-requirements.md](./resource-leak-detector-requirements.md).
+> **Note**: For requirements, see [requirements.md](./requirements.md).
 
 ## Overview
 

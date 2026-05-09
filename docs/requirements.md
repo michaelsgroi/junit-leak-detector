@@ -1,6 +1,6 @@
 # Resource Leak Detector - Requirements
 
-> **Note**: For design and implementation details, see [resource-leak-detector-design.md](./resource-leak-detector-design.md).
+> **Note**: For design and implementation details, see [design.md](./design.md).
 
 ## Purpose
 
