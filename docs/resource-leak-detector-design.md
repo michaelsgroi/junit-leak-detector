@@ -6,7 +6,7 @@
 
 The Resource Leak Detector monitors and reports resource leaks in unit tests, tracking network ports, threads, system properties, environment variables, memory usage, and DynamoDB Local tables.
 
-Per the requirements (REQ-1.2.1, REQ-1.2.2), resource snapshots are captured **at JUnit lifecycle boundaries only** — never via scheduled wall-clock polling. The component uses JUnit Platform's `TestExecutionListener` API for global test-plan lifecycle (suite start/end) and a globally-registered JUnit Jupiter `Extension` for per-class and per-test lifecycle (`BeforeAllCallback`, `BeforeEachCallback`, `AfterEachCallback`, `AfterAllCallback`).
+Resource snapshots are captured **at JUnit lifecycle boundaries only** — never via scheduled wall-clock polling. The component uses JUnit Platform's `TestExecutionListener` API for global test-plan lifecycle (suite start/end) and a globally-registered JUnit Jupiter `Extension` for per-class and per-test lifecycle (`BeforeAllCallback`, `BeforeEachCallback`, `AfterEachCallback`, `AfterAllCallback`).
 
 The component is split into three independent pieces (per the Architecture section of the requirements):
 
@@ -49,7 +49,7 @@ To fully disable the Resource Leak Detector with zero runtime overhead, the cons
 
 ## Pre-flight Configuration Check
 
-Per REQ-3.1–REQ-3.4, before any tests run the component verifies the project's build configuration meets the prerequisites for reliable detection.
+Before any tests run the component verifies the project's build configuration meets the prerequisites for reliable detection.
 
 **ResourcePreflightChecker** is invoked from `ResourceLeakMonitor.testPlanExecutionStarted` before any state is initialized. v1 supports Maven only — if the component cannot locate a `pom.xml` for the running suite, the checker fails fast with an "unsupported build tool" error. Support for other build tools (Gradle, Bazel) is out of scope for v1.
 
@@ -73,8 +73,8 @@ The check can be disabled via configuration (`preflight.enabled=false`) for adva
 JUnit Platform `TestExecutionListener` that orchestrates suite-level lifecycle.
 
 * Registered globally via `META-INF/services/org.junit.platform.launcher.TestExecutionListener`.
-* In `testPlanExecutionStarted`: runs `ResourcePreflightChecker`, initializes `ResourceState`, and triggers the **baseline snapshot** (each enabled monitor captures its current state — these resources are excluded from leak detection per REQ-1.2.3).
-* In `testPlanExecutionFinished`: triggers the **final snapshot** and the thread-grace-period check, then writes the raw report to disk and invokes the attribution component (C3) if running in single-pass mode.
+* In `testPlanExecutionStarted`: runs `ResourcePreflightChecker`, initializes `ResourceState`, and triggers the **baseline snapshot** (each enabled monitor captures its current state — these resources are excluded from leak detection).
+* In `testPlanExecutionFinished`: triggers the **final snapshot**, then writes the raw report to disk and invokes the attribution component (C3) if running in single-pass mode.
 
 **ResourceLeakMonitorTestLifecycleExtension**
 
@@ -83,21 +83,22 @@ JUnit Jupiter `Extension` that drives per-class (default) or per-test (opt-in) s
 * Implements all four callbacks: `BeforeAllCallback`, `BeforeEachCallback`, `AfterEachCallback`, `AfterAllCallback`.
 * Only the `BeforeAll` and `AfterAll` callbacks take snapshots by default. The `BeforeEach`/`AfterEach` callbacks take snapshots only when `snapshot.granularity=test` is configured (see [Configuration](#configuration)). Per-test mode is opt-in because per-test snapshots multiply snapshot work by the average number of methods per class.
 * Registered globally via `META-INF/services/org.junit.jupiter.api.extension.Extension`. Service-loader discovery means it applies to all test classes without `@ExtendWith` on individual tests.
-* On each active callback, the extension records a timestamp and asks every enabled monitor to take a snapshot. Snapshots run synchronously in the test thread (REQ-1.2.1) so they complete before the test or teardown proceeds.
+* On each active callback, the extension records a timestamp and asks every enabled monitor to take a snapshot. Snapshots run synchronously in the test thread so they complete before the test or teardown proceeds.
 * Stores per-class lifecycle intervals (`start` = `BeforeAll` time, `end` = `AfterAll` time) in `ResourceState`. Per-test intervals are also stored when `snapshot.granularity=test`.
+* When `preclass.settle.enabled=true`, the `BeforeAllCallback` performs the pre-class settle wait described in [Pre-class settle wait](#pre-class-settle-wait) before recording the boundary timestamp and snapshot.
 
 **ResourceState**
 
 Singleton holding the **small, in-memory** state needed during a run. Snapshot history is *not* held here — it is streamed to disk by `RawReportWriter` as each callback fires (see [Streaming write](#streaming-write)). The size difference matters: a zos-sized run produces ~100 MB of snapshot history but the live state is only KB-scale.
 
 * **Current state**: per-monitor last-observed discrete resource sets and last-observed numeric values. Used by `ResourceLeakReporter` to compute the leak list (final - baseline) and to feed `RawReportWriter` at each callback.
-* **Baseline state**: per-monitor baseline discrete sets / numeric values, captured in `testPlanExecutionStarted`. Used to suppress baseline resources from leak detection (REQ-1.2.3).
+* **Baseline state**: per-monitor baseline discrete sets / numeric values, captured in `testPlanExecutionStarted`. Used to suppress baseline resources from leak detection.
 * **Per-class lifecycles**: `Map<TestClassName, TestClassLifecycle>`. Per-test intervals also recorded when `snapshot.granularity=test`.
 * **No polling-era fields**: no `last detected time`, no `destroyed time`. With boundary-only snapshots, presence/absence at each snapshot is enough.
 
 **ResourceMonitor**
 
-Base interface for resource monitoring. Each monitor declares its required runtime dependencies. Before instantiating any monitor, the component verifies the required classes are on the runtime classpath via `Class.forName(...)`. If a configured monitor's dependency is missing, the library fails fast with a clear error naming the monitor and the missing dependency (REQ-4.1.3).
+Base interface for resource monitoring. Each monitor declares its required runtime dependencies. Before instantiating any monitor, the component verifies the required classes are on the runtime classpath via `Class.forName(...)`. If a configured monitor's dependency is missing, the library fails fast with a clear error naming the monitor and the missing dependency.
 
 | Monitor | Required runtime dependency |
 |---|---|
@@ -129,11 +130,35 @@ A snapshot at boundary B captures, for each enabled monitor, the resource set or
 
 A leak is declared when the **final** snapshot (taken in `testPlanExecutionFinished`) shows resources or memory growth not present in the **baseline** snapshot. The intermediate snapshots (per-class, per-test) are the timing data used by the attribution component to compute candidate sets.
 
-For threads, the final snapshot is followed by a grace-period wait (REQ-1.3.3, default 10s) before re-snapshotting. Threads that have reached `TERMINATED` during the grace period are dropped from the leak list (REQ-1.3.4).
+For threads, terminated threads are filtered out at snapshot time (`ThreadMonitor` ignores `TERMINATED` threads). Asynchronous thread/port release between test classes is handled by the optional pre-class settle wait below, not by a post-suite grace period.
 
-For memory, a leak is declared if `final - baseline > memory.growth.threshold.mb` (REQ-1.3.5).
+For memory, a leak is declared if `final - baseline > memory.growth.threshold.mb`.
 
-For DynamoDB Local tables, a leak is declared if a table exists in the final snapshot but not the baseline (REQ-1.3.6).
+For DynamoDB Local tables, a leak is declared if a table exists in the final snapshot but not the baseline.
+
+### Pre-class settle wait
+
+When `preclass.settle.enabled=true` the extension waits for slow-to-release resources from the previous test class to clear before snapshotting at the next class's `BeforeAllCallback`. Threads and listening ports often take observable time to release after a class ends; without this wait, the next class's BeforeAll snapshot still shows them and widens the candidate set unnecessarily.
+
+**State carried forward.** After each `AfterAllCallback`, the extension records, per applicable monitor (threads, ports), the **delta set**: resources present in the AfterAll snapshot but absent from the matching BeforeAll snapshot. This is the set of resources that appeared *during* that class. Only the immediately-previous class's delta is retained; older classes' deltas are discarded.
+
+The delta lives as a private mutable field on `ResourceLeakMonitorTestLifecycleExtension`, not in `ResourceState`. JUnit Jupiter's ServiceLoader-discovered extensions are instantiated once per JVM test run (the engine's root extension registry holds a single instance and child registries inherit from it), so a private field on the extension naturally scopes the carry-over state to "this test run" and is reset by JVM lifetime. Under the default sequential execution model, callbacks for different classes do not overlap, so no synchronization is needed; if parallel test execution were ever enabled this state would need to move to a context-keyed store.
+
+**Wait algorithm at `BeforeAllCallback`** (when enabled and a previous-class delta exists):
+
+1. For each applicable monitor, compute `carryover = previousClassDelta ∩ currentSnapshot`. Resources in the previous-class delta but no longer present have already settled.
+2. If `carryover` is empty for all monitors, proceed without waiting.
+3. Otherwise, sleep `preclass.settle.poll.interval.seconds` (default 1s), re-snapshot the applicable monitors, recompute carry-over, and repeat — until either carry-over is empty or `preclass.settle.max.seconds` (default 10s) has elapsed.
+4. Log at DEBUG level the resources being waited on at each iteration and the total elapsed wait at completion. If the timeout elapses with carry-over still non-empty, log at WARN naming the still-present resources, then proceed.
+5. Take the boundary snapshot and record the BeforeAll timestamp **after** the wait completes. The lifecycle interval `[start, end]` for the new class therefore begins at the post-wait timestamp.
+
+**Scope.** The wait applies only to threads and ports. System properties, environment variables, memory, and DynamoDB Local tables release synchronously (or, in the memory case, via GC at unpredictable times that polling cannot influence) and are excluded — waiting on them would mask real leaks rather than reduce attribution noise.
+
+**First class.** The first class in the suite has no previous-class delta, so the wait is a no-op by construction. No special-case code is required.
+
+**Why BeforeAll only.** The wait is intentionally not applied at `BeforeEachCallback`. Per-method settling would multiply the wait by methods-per-class with diminishing return on attribution sharpness, since the default attribution granularity is class-level. If `snapshot.granularity=test` is enabled in the future, per-test settling can be added under a separate config flag.
+
+**Interaction with raw report.** The settle wait is a snapshot-timing concern only. It does not tag resources in the raw report or alter C3's attribution algorithm — its sole effect is to push the BeforeAll timestamp later, which naturally tightens the candidate sets C3 computes from lifecycle intervals.
 
 ### Raw report (C1 output)
 
@@ -179,21 +204,21 @@ The raw report is **streamed to disk during the test run**, not buffered in memo
 
 - A ~100 MB in-memory accumulation across an entire suite is wasteful and risks OOM on large suites.
 - If the JVM crashes or is killed mid-run, a streamed report still contains everything captured up to the crash — useful for diagnosing the crash itself.
-- Writes happen on the test thread (REQ-1.2.1 already requires synchronous snapshotting), so no separate I/O thread is needed.
+- Writes happen on the test thread (snapshotting is already synchronous), so no separate I/O thread is needed.
 
 The report uses a streaming-friendly format: a JSON header (run-level metadata) followed by [JSON Lines](https://jsonlines.org/) — one snapshot object per line. C3 reads this back as a streaming parse rather than loading the whole file. The closing wrapper / metadata is finalized in `testPlanExecutionFinished`.
 
-The schema is the contract between C1 and C3 (REQ-2.3.2): everything C3 needs to compute candidate sets must be derivable from the raw report alone.
+The schema is the contract between C1 and C3: everything C3 needs to compute candidate sets must be derivable from the raw report alone.
 
 ## C2 — Second Run (Optional)
 
 C2 is packaged as a **Maven plugin** (the `orchestrator` module). Distributed via the same Maven artifact pipeline as the library, versioned alongside it, and invoked by users as `mvn com.salesforce.test:junit-leak-detector-orchestrator:run` (or via a binding in their pom). A plugin is preferred over a shell script because it's portable across CI environments, native to the Maven workflow consumers already use, and avoids shipping a separate distribution channel.
 
-When double-run mode is enabled (REQ-2.4.1), the plugin invokes the test suite twice. **C2 controls the full Surefire configuration for both runs** so neither run depends on whatever Surefire defaults the project happens to have. Flags C2 sets explicitly on each invocation:
+When double-run mode is enabled, the plugin invokes the test suite twice. **C2 controls the full Surefire configuration for both runs** so neither run depends on whatever Surefire defaults the project happens to have. Flags C2 sets explicitly on each invocation:
 
 - `surefire.runOrder` — `alphabetical` for run 1, `random` for run 2
-- `surefire.runOrderRandomSeed` — generated and recorded for run 2 (REQ-2.4.3)
-- `forkCount=1`, `reuseForks=true` — required by REQ-3.2
+- `surefire.runOrderRandomSeed` — generated and recorded for run 2
+- `forkCount=1`, `reuseForks=true` — required for cross-class leak detection
 - `junit.jupiter.extensions.autodetection.enabled=true` — required for the extension to load
 - Output paths so each run writes to its own raw report file
 
@@ -203,7 +228,7 @@ Outputs:
 
 C2 is a thin orchestrator. The actual capture work is done by C1 in each invocation. C1 is unaware of run pairing — it just writes one raw report per JVM lifetime; C3 consumes both.
 
-Default mode is single-run (REQ-2.4.4); double-run is opt-in via `runs=2` in configuration or the `-Dresource.leak.detector.runs=2` system property.
+Default mode is single-run; double-run is opt-in via `runs=2` in configuration or the `-Dresource.leak.detector.runs=2` system property.
 
 ### Build failure with double-run mode
 
@@ -211,7 +236,7 @@ When `runs=2` and `build.failure.enabled=true`, **both runs always execute**. Th
 
 ## C3 — Attribution
 
-A separate, post-process component (REQ-2.3.1). Input: one or two raw reports from C1/C2. Output: the final human-readable leak report.
+A separate, post-process component. Input: one or two raw reports from C1/C2. Output: the final human-readable leak report.
 
 C3 has no dependency on JUnit, no test execution, no resource monitoring code. It is pure data transformation and is re-runnable against existing raw reports without re-running the suite.
 
@@ -220,18 +245,18 @@ C3 ships in two forms backed by the same code:
 - **Inline**: invoked from `ResourceLeakMonitor.testPlanExecutionFinished` when `runs=1`. Reads its own just-written raw report and prints the final leak report. Zero-friction default.
 - **Standalone CLI**: required for `runs=2` (C1 cannot see the second run from inside the first), and useful for re-running attribution against saved raw reports without re-running tests. Distributed alongside the library.
 
-### Candidate-set computation (REQ-2.2)
+### Candidate-set computation
 
 For each leak, C3:
 
 1. Identifies the **detection window** as `[t_last_absent, t_first_present]`, where `t_last_absent` is the timestamp of the most recent snapshot in which the resource was absent, and `t_first_present` is the timestamp of the earliest subsequent snapshot in which it was present. (For numeric resources, the analogous calculation uses the threshold-crossing point.)
 2. Computes the **candidate set** as every test class whose `[start, end]` lifecycle interval intersects the detection window. A class that ended before `t_last_absent` is excluded; a class that started after `t_first_present` is excluded.
-3. Per REQ-2.2.2, the candidate set must be non-empty. If C3 computes an empty set, it logs a defect indicator (this means the lifecycle data or snapshot ordering is inconsistent — a bug to be tracked).
+3. The candidate set must be non-empty. If C3 computes an empty set, it logs a defect indicator (this means the lifecycle data or snapshot ordering is inconsistent — a bug to be tracked).
 
 For double-run mode:
 
 1. C3 computes per-run candidate sets independently (using each run's own snapshot stream and lifecycle map).
-2. C3 then **intersects** the candidate sets across the two runs (REQ-2.4.1). The intersection is the final reported candidate set.
+2. C3 then **intersects** the candidate sets across the two runs. The intersection is the final reported candidate set.
 3. If the intersection is empty (rare — would mean the leak appeared in completely disjoint candidate sets across orderings), C3 falls back to the union and notes it in the report.
 
 ### Final report
@@ -299,7 +324,7 @@ data class NumericResourceMeasurement(
 
 ### Optional metadata: thread stack traces
 
-For thread leaks, `ThreadMonitor` may attach the thread's current stack trace (`Thread.getAllStackTraces()`) at the snapshot in which the thread first appeared, as descriptive metadata on the leak entry. This is reporting-only and does not influence candidate set computation (REQ-2.1.1). For all other resource types, no creator stack trace is captured today; see the Backlog section for the planned allocation-time stack-trace capture.
+For thread leaks, `ThreadMonitor` may attach the thread's current stack trace (`Thread.getAllStackTraces()`) at the snapshot in which the thread first appeared, as descriptive metadata on the leak entry. This is reporting-only and does not influence candidate set computation. For all other resource types, no creator stack trace is captured today; see the Backlog section for the planned allocation-time stack-trace capture.
 
 ## Configuration
 
@@ -310,7 +335,6 @@ Configuration values are owned by the consuming project. They are read at startu
 monitored.resource.types=ports,threads,memory
 
 # Detection thresholds
-thread.grace.period.seconds=10
 memory.growth.threshold.mb=1024
 
 # Build failure
@@ -321,6 +345,11 @@ build.failure.resource.types=
 runs=1                       # 1 = single run; 2 = double-run with differential ordering
 snapshot.granularity=class   # class = BeforeAll/AfterAll only; test = also BeforeEach/AfterEach
 
+# Pre-class settle wait
+preclass.settle.enabled=false
+preclass.settle.max.seconds=10
+preclass.settle.poll.interval.seconds=1
+
 # Pre-flight
 preflight.enabled=true
 ```
@@ -328,12 +357,14 @@ preflight.enabled=true
 | Key | Default | Notes |
 |---|---|---|
 | `monitored.resource.types` | (empty) | Comma-separated. Valid: `ports`, `threads`, `systemprops`, `envvars`, `memory`, `ddbtables`. |
-| `thread.grace.period.seconds` | `10` | Per REQ-1.3.3. |
-| `memory.growth.threshold.mb` | `1024` | Per REQ-1.3.5 (with threshold). |
-| `build.failure.enabled` | `false` | Master switch; per REQ-4.2.1. |
-| `build.failure.resource.types` | (empty) | Per REQ-4.2.2. |
-| `runs` | `1` | Set to `2` to enable C2's differential-ordering mode (REQ-2.4). |
+| `memory.growth.threshold.mb` | `1024` | Memory leak threshold. |
+| `build.failure.enabled` | `false` | Master switch for build failure on detected leaks. |
+| `build.failure.resource.types` | (empty) | Comma-separated list of resource types whose leaks fail the build. |
+| `runs` | `1` | Set to `2` to enable C2's differential-ordering mode. |
 | `snapshot.granularity` | `class` | `class` = snapshots at `BeforeAllCallback`/`AfterAllCallback` only. `test` = also at `BeforeEachCallback`/`AfterEachCallback` for fine-grained debugging at the cost of ~Nx more snapshot operations. |
+| `preclass.settle.enabled` | `false` | When `true`, the extension waits for threads/ports that appeared during the previous class to clear before snapshotting at the next class's `BeforeAll`. |
+| `preclass.settle.max.seconds` | `10` | Maximum total time to wait for carry-over resources to clear. |
+| `preclass.settle.poll.interval.seconds` | `1` | Poll interval while waiting. |
 | `preflight.enabled` | `true` | Disable only for advanced users with custom build flows. |
 
 When the Maven dependency is commented out to disable the component, the properties file remains on disk unused.
@@ -392,7 +423,7 @@ The two together give complete coverage: global suite boundaries via the listene
 
 **Why no scheduled polling?**
 
-Per REQ-1.2.1 and REQ-1.2.4: a resource that is allocated and released within a single test is not a leak by definition — capturing intra-test transient state is a different feature (intra-test observability) and out of scope. Boundary-only snapshots eliminate the polling-cadence and "first poll after JVM warm-up" attribution artifacts that the previous polling design was prone to.
+A resource that is allocated and released within a single test is not a leak by definition — capturing intra-test transient state is a different feature (intra-test observability) and out of scope. Boundary-only snapshots eliminate the polling-cadence and "first poll after JVM warm-up" attribution artifacts that the previous polling design was prone to.
 
 ### Backlog
 

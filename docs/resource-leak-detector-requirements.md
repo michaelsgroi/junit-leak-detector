@@ -36,9 +36,11 @@ An optional AI-assisted "skill" layer may sit on top of C3, applying name heuris
 - **REQ-1.2.2**: A test class MUST be considered started before or exactly when the test class setup begins and completed only when its tear down is fully complete.
 - **REQ-1.2.3**: A baseline snapshot MUST be established before any tests run. Resources present in the baseline MUST be excluded from leak detection.
 - **REQ-1.2.4**: Snapshot scope is limited to JUnit lifecycle boundaries (REQ-1.2.1). Resources that are allocated and released within a single test are out of scope; only resources still present at a lifecycle boundary are considered for leak detection.
+- **REQ-1.2.5**: The component MUST support an optional **pre-class settle wait** at the `BeforeAllCallback` boundary. When enabled, before taking the boundary snapshot the component computes the **carry-over set**: resources that appeared during the immediately-previous test class (i.e., present in that class's `AfterAllCallback` snapshot but absent from its `BeforeAllCallback` snapshot) and that are still present now. If the carry-over set is non-empty, the component polls at a configurable interval (default: 1 second) until either (a) all carry-over resources have been released, or (b) a configurable maximum wait has elapsed (default: 10 seconds). The boundary snapshot is then taken and timestamped after the wait completes. Rationale: threads and listening ports often take observable time to fully release after a test class ends; without a settle wait, the next class's `BeforeAll` snapshot still shows the resource and widens the candidate set unnecessarily. Scoping the wait to resources that appeared during the previous class (rather than to anything still present from the previous snapshot) avoids waiting on resources that span multiple classes by design. The wait does NOT apply at `BeforeEachCallback`: per-test settling would multiply wait time by methods-per-class with diminishing return on attribution sharpness, since attribution is class-level by default.
+- **REQ-1.2.6**: The pre-class settle wait applies only to resource types that are known to release asynchronously: **threads** and **network ports**. Other monitored resource types (system properties, environment variables, memory, DynamoDB Local tables) are excluded — their release is synchronous from the test's perspective, and waiting on them would mask real leaks rather than reduce attribution noise. The wait MUST NOT cause baseline resources to be re-evaluated. The wait MUST log (at debug level) the resources it is waiting on and the elapsed wait time on completion; if the maximum wait elapses with carry-over resources still present, the component MUST log at WARN level naming the still-present resources, then proceed with the snapshot.
 
 #### 1.3 Leak Reporting
-- **REQ-1.3.1**: Leak reporting MUST occur after all tests have completed and after the thread termination grace period.
+- **REQ-1.3.1**: Leak reporting MUST occur after all tests have completed.
 - **REQ-1.3.2**: Leak reports MUST be formatted as a list of leaks for monitored resource types, where each leak entry includes:
   - Resource details:
     - For network ports: port number
@@ -49,10 +51,9 @@ An optional AI-assisted "skill" layer may sit on top of C3, applying name heuris
     - For DynamoDB Local tables: table name
   - Timestamp when the resource was first observed (the snapshot at which the resource transitioned from absent to present), in ISO8601 format
   - The candidate set (per REQ-2.x)
-- **REQ-1.3.3**: A thread MUST only be considered leaked if it does not reach TERMINATED state within the configurable grace period (default: 10 seconds) after all tests have completed.
-- **REQ-1.3.4**: TERMINATED threads MUST NOT be considered as leaked.
-- **REQ-1.3.5**: Memory MUST be considered leaked if the final used heap exceeds the baseline used heap.
-- **REQ-1.3.6**: A DynamoDB Local table MUST be considered leaked if it exists in the final table list but not in the baseline table list.
+- **REQ-1.3.3**: TERMINATED threads MUST NOT be considered as leaked.
+- **REQ-1.3.4**: Memory MUST be considered leaked if the final used heap exceeds the baseline used heap.
+- **REQ-1.3.5**: A DynamoDB Local table MUST be considered leaked if it exists in the final table list but not in the baseline table list.
 
 ### 2. Attribution
 
