@@ -76,12 +76,14 @@ An optional AI-assisted "skill" layer may sit on top of C3, applying name heuris
 - **REQ-2.4.3**: The seed used for the second run MUST be recorded in the raw report so the run is reproducible.
 - **REQ-2.4.4**: Default mode is single-run (one execution, wider candidate sets). Double-run mode is opt-in.
 
-### 3. Pre-flight Configuration Check
+### 3. Test-isolation Prerequisites
 
-- **REQ-3.1**: Before running tests, the component MUST inspect the project's build configuration (`pom.xml` for Maven; equivalents for other supported build tools) to verify isolation settings required for reliable detection.
-- **REQ-3.2**: Required isolation settings: `forkCount=1` and `reuseForks=true`. With `reuseForks=false`, sticky cross-class leaks are invisible because each fork starts clean.
-- **REQ-3.3**: If the project's settings would prevent reliable detection, the component MUST refuse to run and MUST emit a clear error message telling the user exactly how to invoke the suite with the correct settings.
-- **REQ-3.4**: The hard prerequisites in REQ-3.2 MUST be documented in user-facing documentation.
+Reliable detection requires that all test classes share one JVM for the duration of the run. Two prerequisites flow from this:
+
+- **REQ-3.1**: The supported invocation mechanism is the double-run orchestrator Maven plugin (see Architecture / REQ-2.4), which controls the full Surefire configuration on its invocations and explicitly sets `forkCount=1` and `reuseForks=true`. Users who consume the library without the orchestrator are responsible for setting these themselves.
+- **REQ-3.2**: The required Surefire settings (`forkCount=1`, `reuseForks=true`, plus `junit.jupiter.extensions.autodetection.enabled=true`) MUST be documented in user-facing documentation, with an example pom snippet for the standalone-library case and a note that the orchestrator handles them automatically.
+- **REQ-3.3**: At runtime, the component MUST detect whether the current JVM is being shared across the entire test plan by writing a per-fork marker file (containing the JVM PID and start timestamp) to the configured output directory at `testPlanExecutionStarted` and reading any pre-existing markers. If markers from prior forks of the same suite invocation are observed, the component MUST log a WARN naming the suspected misconfiguration (`forkCount` > 1 or `reuseForks=false`) and the implication (cross-class leaks will be invisible/under-attributed). The component MUST NOT refuse to run; it proceeds and reports what it can.
+- **REQ-3.4**: Static `pom.xml` parsing is explicitly out of scope: profile-resolved Surefire configuration cannot be reliably reproduced at runtime, and a parser would either give false positives (missing profile-aware overrides) or false negatives (missing system-property overrides). The runtime fork-detection in REQ-3.3 covers the actual failure mode without depending on accurate static analysis.
 
 ### 4. Leak Detection and Analysis
 

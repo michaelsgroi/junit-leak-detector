@@ -47,22 +47,40 @@ Configuration is supplied by the consuming project via a properties file on the 
 
 To fully disable the Resource Leak Detector with zero runtime overhead, the consuming project omits (or comments out) the Maven dependency. With the JAR off the test classpath, ServiceLoader discovers nothing, no classes from the library are loaded, and no hooks fire.
 
-## Pre-flight Configuration Check
+## Test-isolation Prerequisites
 
-Before any tests run the component verifies the project's build configuration meets the prerequisites for reliable detection.
+Reliable detection requires every test class in the suite to share one JVM. With `forkCount` > 1 or `reuseForks=false`, each fork starts clean and cross-class sticky leaks become invisible. The component handles this in two complementary ways:
 
-**ResourcePreflightChecker** is invoked from `ResourceLeakMonitor.testPlanExecutionStarted` before any state is initialized. v1 supports Maven only — if the component cannot locate a `pom.xml` for the running suite, the checker fails fast with an "unsupported build tool" error. Support for other build tools (Gradle, Bazel) is out of scope for v1.
+### Orchestrator owns the invocation
 
-For Maven projects, the checker inspects `pom.xml` resolved against the active profile and verifies:
+The supported entry point is the double-run orchestrator Maven plugin (see [C2 — Second Run](#c2--second-run-optional)). The orchestrator invokes Surefire with the required flags set explicitly on the command line:
 
-| Setting | Required value | Why |
-|---|---|---|
-| `forkCount` | `1` | Ensures all test classes share one JVM so cross-class sticky leaks are observable. |
-| `reuseForks` | `true` | Same — `false` resets state between forks and hides cross-class leaks. |
+```
+-DforkCount=1 -DreuseForks=true -Djunit.jupiter.extensions.autodetection.enabled=true
+```
 
-If any required setting is missing or wrong, the checker throws a fatal error with a clear message naming the offending setting, the value found, the value required, and an example Surefire snippet. The component does not proceed.
+These overrides take precedence over whatever the consuming project has in `pom.xml` or active profiles. As long as users invoke the detector through the orchestrator, the prerequisites are satisfied by construction — no static analysis required.
 
-The check can be disabled via configuration (`preflight.enabled=false`) for advanced users running custom build flows; doing so prints a warning and proceeds at the user's risk.
+### Runtime fork-detection (standalone library use)
+
+Static parsing of `pom.xml` is explicitly out of scope. Profile-resolved Surefire configuration cannot be reliably reproduced from inside the test JVM (profiles, system-property overrides, plugin inheritance), and a partial parser would produce both false positives and false negatives.
+
+Instead, when consumers use the library without the orchestrator, the component performs a **runtime fork-detection check** in `ResourceLeakMonitor.testPlanExecutionStarted`:
+
+1. Write a per-fork marker file to `target/resource-leak-detector/forks/<pid>.marker` containing the current JVM PID and start timestamp.
+2. List existing `*.marker` files in the same directory. Any markers older than the current JVM start (within a recent window, e.g., 5 minutes) suggest a prior fork of the same `mvn test` invocation has already run — i.e., `forkCount > 1` or `reuseForks=false`.
+3. If prior markers are observed, log at WARN naming the suspected misconfiguration (`forkCount` > 1 or `reuseForks=false`), explaining the implication (cross-class leaks will be invisible or under-attributed), and pointing at the orchestrator + the documented Surefire snippet. The component does NOT refuse to run; it proceeds and reports what it can.
+4. The marker directory is cleared at the start of each test plan when no prior markers are present (i.e., on the first fork), so stale markers from previous days don't trigger false warnings.
+
+This catches the actual failure mode (multiple JVMs servicing one test plan) without relying on accurate static analysis. The trade-off: the warning fires after the first misconfigured fork has already run and produced a partial report; that's acceptable since the orchestrator is the recommended path for users who care.
+
+### Documentation
+
+User-facing documentation MUST include:
+
+- A note that the orchestrator is the recommended invocation and handles all prerequisites automatically.
+- For standalone-library users: an example Surefire snippet that sets `forkCount=1`, `reuseForks=true`, and `junit.jupiter.extensions.autodetection.enabled=true`.
+- A description of the runtime fork-detection warning and how to fix the underlying configuration.
 
 ## C1 — Test Runner + Raw Report
 
@@ -73,7 +91,7 @@ The check can be disabled via configuration (`preflight.enabled=false`) for adva
 JUnit Platform `TestExecutionListener` that orchestrates suite-level lifecycle.
 
 * Registered globally via `META-INF/services/org.junit.platform.launcher.TestExecutionListener`.
-* In `testPlanExecutionStarted`: runs `ResourcePreflightChecker`, initializes `ResourceState`, and triggers the **baseline snapshot** (each enabled monitor captures its current state — these resources are excluded from leak detection).
+* In `testPlanExecutionStarted`: writes the per-fork marker (see [Runtime fork-detection](#runtime-fork-detection-standalone-library-use)), initializes `ResourceState`, and triggers the **baseline snapshot** (each enabled monitor captures its current state — these resources are excluded from leak detection).
 * In `testPlanExecutionFinished`: triggers the **final snapshot**, then writes the raw report to disk and invokes the attribution component (C3) if running in single-pass mode.
 
 **ResourceLeakMonitorTestLifecycleExtension**
@@ -363,9 +381,6 @@ snapshot.granularity=class   # class = BeforeAll/AfterAll only; test = also Befo
 preclass.settle.enabled=false
 preclass.settle.max.seconds=10
 preclass.settle.poll.interval.seconds=1
-
-# Pre-flight
-preflight.enabled=true
 ```
 
 | Key | Default | Notes |
@@ -379,7 +394,6 @@ preflight.enabled=true
 | `preclass.settle.enabled` | `false` | When `true`, the extension waits for threads/ports that appeared during the previous class to clear before snapshotting at the next class's `BeforeAll`. |
 | `preclass.settle.max.seconds` | `10` | Maximum total time to wait for carry-over resources to clear. |
 | `preclass.settle.poll.interval.seconds` | `1` | Poll interval while waiting. |
-| `preflight.enabled` | `true` | Disable only for advanced users with custom build flows. |
 | `raw.report.output.path` | `target/resource-leak-detector/raw-report.json` | Path of the streaming JSON Lines raw report. The human-readable text report is written as `leak-report.txt` in the same directory. |
 
 When the Maven dependency is commented out to disable the component, the properties file remains on disk unused.
