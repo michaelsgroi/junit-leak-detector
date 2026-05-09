@@ -30,11 +30,9 @@ class ResourceLeakReporterTest {
         logAssertionExtension.shutdown()
     }
 
-    private fun setMonitored(types: String) =
-        System.setProperty("resource.leak.detector.monitored.resource.types", types)
+    private fun setMonitored(types: String) = System.setProperty("resource.leak.detector.monitored.resource.types", types)
 
-    private fun setBuildFailure(types: String) =
-        System.setProperty("resource.leak.detector.build.failure.resource.types", types)
+    private fun setBuildFailure(types: String) = System.setProperty("resource.leak.detector.build.failure.resource.types", types)
 
     // --- system properties ---
 
@@ -54,7 +52,7 @@ class ResourceLeakReporterTest {
         resourceState.recordBaselineDiscrete(ResourceId.PropertyId::class, setOf(ResourceId.PropertyId("baseline")))
         resourceState.updateCurrentDiscrete(
             ResourceId.PropertyId::class,
-            setOf(ResourceId.PropertyId("baseline"), ResourceId.PropertyId("leaked"))
+            setOf(ResourceId.PropertyId("baseline"), ResourceId.PropertyId("leaked")),
         )
 
         ResourceLeakReporter(resourceState).report()
@@ -83,7 +81,7 @@ class ResourceLeakReporterTest {
         resourceState.recordBaselineDiscrete(ResourceId.EnvironmentVariableId::class, emptySet())
         resourceState.updateCurrentDiscrete(
             ResourceId.EnvironmentVariableId::class,
-            setOf(ResourceId.EnvironmentVariableId("LEAKED_VAR"))
+            setOf(ResourceId.EnvironmentVariableId("LEAKED_VAR")),
         )
 
         ResourceLeakReporter(resourceState).report()
@@ -100,7 +98,7 @@ class ResourceLeakReporterTest {
         resourceState.recordBaselineDiscrete(ResourceId.ThreadId::class, emptySet())
         resourceState.updateCurrentDiscrete(
             ResourceId.ThreadId::class,
-            setOf(ResourceId.ThreadId("worker", 42L))
+            setOf(ResourceId.ThreadId("worker", 42L)),
         )
 
         ResourceLeakReporter(resourceState).report()
@@ -131,7 +129,7 @@ class ResourceLeakReporterTest {
         resourceState.recordBaselineDiscrete(ResourceId.DynamoDbTableId::class, emptySet())
         resourceState.updateCurrentDiscrete(
             ResourceId.DynamoDbTableId::class,
-            setOf(ResourceId.DynamoDbTableId("orders"))
+            setOf(ResourceId.DynamoDbTableId("orders")),
         )
 
         ResourceLeakReporter(resourceState).report()

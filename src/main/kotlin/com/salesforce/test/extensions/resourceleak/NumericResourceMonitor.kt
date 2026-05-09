@@ -4,7 +4,7 @@ import java.time.Instant
 
 data class NumericResourceMeasurement(
     val value: Long,
-    val timestamp: Instant
+    val timestamp: Instant,
 )
 
 interface NumericResourceMonitor {

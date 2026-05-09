@@ -12,7 +12,7 @@ import java.util.Properties
  */
 class Configuration(
     propertiesLoader: () -> Properties? = ::loadFromClasspath,
-    private val systemPropertyLookup: (String) -> String? = System::getProperty
+    private val systemPropertyLookup: (String) -> String? = System::getProperty,
 ) {
     private val fileProperties: Properties = propertiesLoader() ?: Properties()
 
@@ -29,9 +29,10 @@ class Configuration(
         get() = read("build.failure.resource.types") ?: ""
 
     val snapshotGranularity: SnapshotGranularity
-        get() = read("snapshot.granularity")
-            ?.let { SnapshotGranularity.fromConfigValue(it) }
-            ?: SnapshotGranularity.CLASS
+        get() =
+            read("snapshot.granularity")
+                ?.let { SnapshotGranularity.fromConfigValue(it) }
+                ?: SnapshotGranularity.CLASS
 
     val rawReportOutputPath: String
         get() = read("raw.report.output.path") ?: "target/resource-leak-detector/raw-report.json"
@@ -57,13 +58,15 @@ class Configuration(
 
         @JvmStatic
         val instance: Configuration
-            get() = sharedInstance ?: synchronized(this) {
-                sharedInstance ?: Configuration().also { sharedInstance = it }
-            }
+            get() =
+                sharedInstance ?: synchronized(this) {
+                    sharedInstance ?: Configuration().also { sharedInstance = it }
+                }
 
         private fun loadFromClasspath(): Properties? {
-            val classLoader = Thread.currentThread().contextClassLoader
-                ?: Configuration::class.java.classLoader
+            val classLoader =
+                Thread.currentThread().contextClassLoader
+                    ?: Configuration::class.java.classLoader
             val stream = classLoader.getResourceAsStream(PROPERTIES_FILE_NAME) ?: return null
             return stream.use { Properties().apply { load(it) } }
         }

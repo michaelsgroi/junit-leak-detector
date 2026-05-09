@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class MemoryMonitorTest {
-
     @Test
     fun `snapshot returns positive heap usage with timestamp from clock`() {
         val clock = TestClock(1000L)

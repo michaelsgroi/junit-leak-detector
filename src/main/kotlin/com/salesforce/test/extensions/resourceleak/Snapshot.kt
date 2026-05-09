@@ -11,5 +11,5 @@ data class Snapshot(
     val testClass: String?,
     val testMethod: String?,
     val discrete: Map<KClass<out ResourceId>, Set<ResourceId>>,
-    val numeric: Map<String, NumericResourceMeasurement>
+    val numeric: Map<String, NumericResourceMeasurement>,
 )

@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Test
 import java.util.Properties
 
 class MonitorRegistryTest {
-
     @AfterEach
     fun cleanup() {
         System.clearProperty("test.property.baseline")
@@ -70,14 +69,15 @@ class MonitorRegistryTest {
 
     @Test
     fun `construction fails fast when ddbtables monitor configured but AWS SDK absent`() {
-        val ex = assertThrows(IllegalStateException::class.java) {
-            MonitorRegistry(
-                ResourceState(),
-                TestClock(0L),
-                classPresent = { false },
-                configuration = configWith("ddbtables")
-            )
-        }
+        val ex =
+            assertThrows(IllegalStateException::class.java) {
+                MonitorRegistry(
+                    ResourceState(),
+                    TestClock(0L),
+                    classPresent = { false },
+                    configuration = configWith("ddbtables"),
+                )
+            }
         val message = ex.message ?: ""
         assertTrue(message.contains("ddbtables"))
         assertTrue(message.contains("software.amazon.awssdk:dynamodb"))
@@ -89,7 +89,7 @@ class MonitorRegistryTest {
             ResourceState(),
             TestClock(0L),
             classPresent = { true },
-            configuration = configWith("ddbtables")
+            configuration = configWith("ddbtables"),
         )
     }
 
@@ -99,23 +99,26 @@ class MonitorRegistryTest {
             ResourceState(),
             TestClock(0L),
             classPresent = { false },
-            configuration = configWith("systemprops,memory,threads")
+            configuration = configWith("systemprops,memory,threads"),
         )
     }
 
     @Test
-    fun `captureBaseline and snapshotAll emit records to the raw report writer`(@org.junit.jupiter.api.io.TempDir tempDir: java.nio.file.Path) {
+    fun `captureBaseline and snapshotAll emit records to the raw report writer`(
+        @org.junit.jupiter.api.io.TempDir tempDir: java.nio.file.Path,
+    ) {
         val outputFile = tempDir.resolve("raw.json").toFile()
         val writer = RawReportWriter(outputFile, runId = "r")
         writer.open(java.time.Instant.EPOCH, listOf("systemprops"), SnapshotGranularity.CLASS)
         val state = ResourceState()
         val clock = TestClock(0L)
-        val registry = MonitorRegistry(
-            resourceState = state,
-            clock = clock,
-            configuration = configWith("systemprops"),
-            rawReportWriter = writer
-        )
+        val registry =
+            MonitorRegistry(
+                resourceState = state,
+                clock = clock,
+                configuration = configWith("systemprops"),
+                rawReportWriter = writer,
+            )
 
         registry.captureBaseline()
         registry.snapshotAll(kind = SnapshotKind.BEFORE_ALL, testClass = "com.A")
@@ -131,11 +134,12 @@ class MonitorRegistryTest {
 
     @Test
     fun `hasAny returns false when no resource types configured`() {
-        val registry = MonitorRegistry(
-            ResourceState(),
-            TestClock(0L),
-            configuration = configWith("")
-        )
+        val registry =
+            MonitorRegistry(
+                ResourceState(),
+                TestClock(0L),
+                configuration = configWith(""),
+            )
         assertEquals(false, registry.hasAny())
     }
 }

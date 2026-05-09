@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class PortMonitorTest {
-
     @Test
     fun `snapshot returns PortId types`() {
         val monitor = PortMonitor()

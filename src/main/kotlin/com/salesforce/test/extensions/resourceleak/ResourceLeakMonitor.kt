@@ -21,9 +21,12 @@ class ResourceLeakMonitor : TestExecutionListener {
             registry = r
             writer.open(
                 startedAt = clock.instant(),
-                monitors = configuration.monitoredResourceTypes
-                    .split(",").map { it.trim() }.filter { it.isNotEmpty() },
-                snapshotGranularity = configuration.snapshotGranularity
+                monitors =
+                    configuration.monitoredResourceTypes
+                        .split(",")
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() },
+                snapshotGranularity = configuration.snapshotGranularity,
             )
             r.captureBaseline()
             SharedMonitorRegistry.set(r)
@@ -41,7 +44,7 @@ class ResourceLeakMonitor : TestExecutionListener {
         val rawPath = Configuration.instance.rawReportOutputPath
         rawReportWriter?.closeWith(
             finishedAt = clock.instant(),
-            lifecycles = ResourceState.instance.getAllTestClassLifecycles()
+            lifecycles = ResourceState.instance.getAllTestClassLifecycles(),
         )
         val textReportFile = File(rawPath).resolveSibling("leak-report.txt")
         ResourceLeakReporter(textOutputFile = textReportFile).report()

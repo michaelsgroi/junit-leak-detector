@@ -1,11 +1,13 @@
 package com.salesforce.test.extensions.resourceleak
 
-enum class SnapshotGranularity(val configValue: String) {
+enum class SnapshotGranularity(
+    val configValue: String,
+) {
     CLASS("class"),
-    TEST("test");
+    TEST("test"),
+    ;
 
     companion object {
-        fun fromConfigValue(value: String): SnapshotGranularity? =
-            values().find { it.configValue == value.trim() }
+        fun fromConfigValue(value: String): SnapshotGranularity? = values().find { it.configValue == value.trim() }
     }
 }

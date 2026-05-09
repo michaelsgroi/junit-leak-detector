@@ -25,7 +25,7 @@ class ResourceLeakMonitorTestLifecycleExtensionTest {
     private fun extensionWith(
         configProps: Map<String, String> = emptyMap(),
         registryProvider: () -> MonitorRegistry? = { null },
-        state: ResourceState = testResourceState
+        state: ResourceState = testResourceState,
     ): ResourceLeakMonitorTestLifecycleExtension {
         val props = Properties().apply { configProps.forEach { (k, v) -> setProperty(k, v) } }
         val configuration = Configuration(propertiesLoader = { props }, systemPropertyLookup = { null })
@@ -33,7 +33,7 @@ class ResourceLeakMonitorTestLifecycleExtensionTest {
             resourceState = state,
             clock = clock,
             configuration = configuration,
-            registryProvider = registryProvider
+            registryProvider = registryProvider,
         )
     }
 
@@ -55,19 +55,20 @@ class ResourceLeakMonitorTestLifecycleExtensionTest {
         assertEquals(
             mapOf(
                 testClass1.name to TestClassLifecycle(Instant.ofEpochMilli(0L), Instant.ofEpochMilli(1L)),
-                testClass2.name to TestClassLifecycle(Instant.ofEpochMilli(2L), Instant.ofEpochMilli(3L))
+                testClass2.name to TestClassLifecycle(Instant.ofEpochMilli(2L), Instant.ofEpochMilli(3L)),
             ),
-            testResourceState.getAllTestClassLifecycles()
+            testResourceState.getAllTestClassLifecycles(),
         )
     }
 
     @Test
     fun `class granularity by default makes per-each callbacks no-op`() {
         var calls = 0
-        val testee = extensionWith(registryProvider = {
-            calls++
-            null
-        })
+        val testee =
+            extensionWith(registryProvider = {
+                calls++
+                null
+            })
         val ctx = createMockExtensionContext(testClass1, methodName = "m")
 
         testee.beforeAll(ctx)
@@ -82,13 +83,14 @@ class ResourceLeakMonitorTestLifecycleExtensionTest {
     @Test
     fun `test granularity records per-test lifecycles and triggers per-each snapshots`() {
         var calls = 0
-        val testee = extensionWith(
-            configProps = mapOf("snapshot.granularity" to "test"),
-            registryProvider = {
-                calls++
-                null
-            }
-        )
+        val testee =
+            extensionWith(
+                configProps = mapOf("snapshot.granularity" to "test"),
+                registryProvider = {
+                    calls++
+                    null
+                },
+            )
         val ctx = createMockExtensionContext(testClass1, methodName = "m1")
 
         testee.beforeAll(ctx)
@@ -103,7 +105,7 @@ class ResourceLeakMonitorTestLifecycleExtensionTest {
         val key = TestMethodKey(testClass1.name, "m1")
         assertEquals(
             TestClassLifecycle(Instant.ofEpochMilli(1), Instant.ofEpochMilli(2)),
-            testResourceState.getAllTestMethodLifecycles()[key]
+            testResourceState.getAllTestMethodLifecycles()[key],
         )
     }
 
@@ -118,35 +120,51 @@ class ResourceLeakMonitorTestLifecycleExtensionTest {
         assertEquals(1, testResourceState.getAllTestClassLifecycles().size)
     }
 
-    private fun createMockExtensionContext(testClass: Class<*>, methodName: String? = null): ExtensionContext {
+    private fun createMockExtensionContext(
+        testClass: Class<*>,
+        methodName: String? = null,
+    ): ExtensionContext {
         val method: Method? = methodName?.let { testClass.declaredMethods.firstOrNull { m -> m.name == it } }
         return object : ExtensionContext {
             override fun getRequiredTestClass(): Class<*> = testClass
+
             override fun getTestClass(): Optional<Class<*>> = Optional.of(testClass)
+
             override fun getUniqueId(): String = "test"
+
             override fun getDisplayName(): String = testClass.name
+
             override fun getTags(): MutableSet<String> = mutableSetOf()
+
             override fun getParent(): Optional<ExtensionContext> = Optional.empty()
+
             override fun getRoot(): ExtensionContext = this
-            override fun getStore(namespace: ExtensionContext.Namespace): Store {
-                throw UnsupportedOperationException()
-            }
-            override fun publishReportEntry(entries: MutableMap<String, String>) {
-                throw UnsupportedOperationException()
-            }
+
+            override fun getStore(namespace: ExtensionContext.Namespace): Store = throw UnsupportedOperationException()
+
+            override fun publishReportEntry(entries: MutableMap<String, String>): Unit = throw UnsupportedOperationException()
+
             override fun getConfigurationParameter(key: String): Optional<String> = Optional.empty()
-            override fun <T> getConfigurationParameter(key: String, transformer: Function<String, T>): Optional<T> {
-                throw UnsupportedOperationException()
-            }
+
+            override fun <T> getConfigurationParameter(
+                key: String,
+                transformer: Function<String, T>,
+            ): Optional<T> = throw UnsupportedOperationException()
+
             override fun getTestMethod(): Optional<Method> = Optional.ofNullable(method)
+
             override fun getTestInstance(): Optional<Any> = Optional.empty()
+
             override fun getTestInstances(): Optional<TestInstances> = Optional.empty()
+
             override fun getTestInstanceLifecycle(): Optional<Lifecycle> = Optional.empty()
+
             override fun getExecutionMode(): ExecutionMode = ExecutionMode.SAME_THREAD
+
             override fun getElement(): Optional<AnnotatedElement> = Optional.empty()
-            override fun getExecutableInvoker(): ExecutableInvoker {
-                throw UnsupportedOperationException()
-            }
+
+            override fun getExecutableInvoker(): ExecutableInvoker = throw UnsupportedOperationException()
+
             override fun getExecutionException(): Optional<Throwable> = Optional.empty()
         }
     }
@@ -154,6 +172,7 @@ class ResourceLeakMonitorTestLifecycleExtensionTest {
     @Suppress("unused")
     private class TestClass1 {
         fun m1() {}
+
         fun m() {}
     }
 

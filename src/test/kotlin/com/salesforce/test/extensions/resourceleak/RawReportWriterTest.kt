@@ -9,9 +9,10 @@ import java.nio.file.Path
 import java.time.Instant
 
 class RawReportWriterTest {
-
     @Test
-    fun `writes header snapshot lines and footer in order with one record per line`(@TempDir tempDir: Path) {
+    fun `writes header snapshot lines and footer in order with one record per line`(
+        @TempDir tempDir: Path,
+    ) {
         val outputFile = tempDir.resolve("nested/raw-report.json").toFile()
         val writer = RawReportWriter(outputFile, runId = "run-1")
         val started = Instant.parse("2024-01-01T00:00:00Z")
@@ -21,7 +22,7 @@ class RawReportWriterTest {
         writer.open(
             startedAt = started,
             monitors = listOf("threads"),
-            snapshotGranularity = SnapshotGranularity.CLASS
+            snapshotGranularity = SnapshotGranularity.CLASS,
         )
         writer.appendSnapshot(
             Snapshot(
@@ -30,12 +31,12 @@ class RawReportWriterTest {
                 testClass = null,
                 testMethod = null,
                 discrete = mapOf(ResourceId.ThreadId::class to setOf(ResourceId.ThreadId("main", 1L))),
-                numeric = emptyMap()
-            )
+                numeric = emptyMap(),
+            ),
         )
         writer.closeWith(
             finishedAt = finished,
-            lifecycles = mapOf("com.A" to TestClassLifecycle(ts, finished))
+            lifecycles = mapOf("com.A" to TestClassLifecycle(ts, finished)),
         )
 
         assertTrue(outputFile.exists(), "raw report file should be created")
@@ -50,13 +51,15 @@ class RawReportWriterTest {
     }
 
     @Test
-    fun `appendSnapshot is a no-op before open and after close`(@TempDir tempDir: Path) {
+    fun `appendSnapshot is a no-op before open and after close`(
+        @TempDir tempDir: Path,
+    ) {
         val outputFile = tempDir.resolve("raw-report.json").toFile()
         val writer = RawReportWriter(outputFile, runId = "r")
 
         // Before open: should not throw or create the file.
         writer.appendSnapshot(
-            Snapshot(SnapshotKind.BASELINE, Instant.EPOCH, null, null, emptyMap(), emptyMap())
+            Snapshot(SnapshotKind.BASELINE, Instant.EPOCH, null, null, emptyMap(), emptyMap()),
         )
         assertEquals(false, outputFile.exists())
 
@@ -66,13 +69,15 @@ class RawReportWriterTest {
         // After close: appending should not reopen the file.
         val sizeAfterClose = outputFile.length()
         writer.appendSnapshot(
-            Snapshot(SnapshotKind.FINAL, Instant.EPOCH, null, null, emptyMap(), emptyMap())
+            Snapshot(SnapshotKind.FINAL, Instant.EPOCH, null, null, emptyMap(), emptyMap()),
         )
         assertEquals(sizeAfterClose, outputFile.length())
     }
 
     @Test
-    fun `creates parent directories if missing`(@TempDir tempDir: Path) {
+    fun `creates parent directories if missing`(
+        @TempDir tempDir: Path,
+    ) {
         val nested: File = tempDir.resolve("a/b/c/raw.json").toFile()
         val writer = RawReportWriter(nested)
         writer.open(Instant.EPOCH, emptyList(), SnapshotGranularity.CLASS)

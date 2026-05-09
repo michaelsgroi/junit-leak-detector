@@ -5,8 +5,9 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 
-class TestClock(millis: Long = 42L) : Clock() {
-
+class TestClock(
+    millis: Long = 42L,
+) : Clock() {
     private var now: Instant = Instant.ofEpochMilli(millis)
 
     fun setMillis(millis: Long) {

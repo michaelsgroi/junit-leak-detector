@@ -18,10 +18,11 @@ class ResourceStateDiscreteResourceTest {
 
     @Test
     fun `recordBaselineDiscrete sets both baseline and current`() {
-        val resources = setOf<ResourceId>(
-            ResourceId.PropertyId("prop1"),
-            ResourceId.PropertyId("prop2")
-        )
+        val resources =
+            setOf<ResourceId>(
+                ResourceId.PropertyId("prop1"),
+                ResourceId.PropertyId("prop2"),
+            )
 
         resourceState.recordBaselineDiscrete(ResourceId.PropertyId::class, resources)
 
@@ -34,10 +35,11 @@ class ResourceStateDiscreteResourceTest {
         val baseline = setOf<ResourceId>(ResourceId.PropertyId("prop1"))
         resourceState.recordBaselineDiscrete(ResourceId.PropertyId::class, baseline)
 
-        val updated = setOf<ResourceId>(
-            ResourceId.PropertyId("prop1"),
-            ResourceId.PropertyId("leaked")
-        )
+        val updated =
+            setOf<ResourceId>(
+                ResourceId.PropertyId("prop1"),
+                ResourceId.PropertyId("leaked"),
+            )
         resourceState.updateCurrentDiscrete(ResourceId.PropertyId::class, updated)
 
         assertEquals(baseline, resourceState.getBaselineDiscrete(ResourceId.PropertyId::class))

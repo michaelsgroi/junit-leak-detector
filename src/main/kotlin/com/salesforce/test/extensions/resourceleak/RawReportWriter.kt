@@ -7,11 +7,15 @@ import java.util.UUID
 
 class RawReportWriter(
     private val outputFile: File,
-    private val runId: String = UUID.randomUUID().toString()
+    private val runId: String = UUID.randomUUID().toString(),
 ) {
     private var writer: BufferedWriter? = null
 
-    fun open(startedAt: Instant, monitors: List<String>, snapshotGranularity: SnapshotGranularity) {
+    fun open(
+        startedAt: Instant,
+        monitors: List<String>,
+        snapshotGranularity: SnapshotGranularity,
+    ) {
         outputFile.parentFile?.mkdirs()
         val w = outputFile.bufferedWriter()
         writer = w
@@ -20,8 +24,8 @@ class RawReportWriter(
                 runId = runId,
                 startedAt = startedAt.toString(),
                 monitors = monitors,
-                snapshotGranularity = snapshotGranularity.configValue
-            )
+                snapshotGranularity = snapshotGranularity.configValue,
+            ),
         )
         w.flush()
     }
@@ -32,7 +36,10 @@ class RawReportWriter(
         w.flush()
     }
 
-    fun closeWith(finishedAt: Instant, lifecycles: Map<TestClassName, TestClassLifecycle>) {
+    fun closeWith(
+        finishedAt: Instant,
+        lifecycles: Map<TestClassName, TestClassLifecycle>,
+    ) {
         val w = writer ?: return
         w.appendLine(RawReportJson.encodeFooter(finishedAt.toString(), lifecycles))
         w.flush()

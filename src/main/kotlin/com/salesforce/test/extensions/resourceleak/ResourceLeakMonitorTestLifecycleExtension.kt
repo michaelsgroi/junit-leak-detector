@@ -13,9 +13,11 @@ class ResourceLeakMonitorTestLifecycleExtension(
     private val resourceState: ResourceState = ResourceState.instance,
     private val clock: Clock = Clock.systemUTC(),
     private val configuration: Configuration = Configuration.instance,
-    private val registryProvider: () -> MonitorRegistry? = { SharedMonitorRegistry.get() }
-) : BeforeAllCallback, AfterAllCallback, BeforeEachCallback, AfterEachCallback {
-
+    private val registryProvider: () -> MonitorRegistry? = { SharedMonitorRegistry.get() },
+) : BeforeAllCallback,
+    AfterAllCallback,
+    BeforeEachCallback,
+    AfterEachCallback {
     override fun beforeAll(extensionContext: ExtensionContext) {
         val testClassName = extensionContext.requiredTestClass.name
         resourceState.recordTestClassStart(testClassName, clock.instant())
@@ -35,7 +37,7 @@ class ResourceLeakMonitorTestLifecycleExtension(
         registryProvider()?.snapshotAll(
             kind = SnapshotKind.BEFORE_EACH,
             testClass = key.testClassName,
-            testMethod = key.testMethodName
+            testMethod = key.testMethodName,
         )
     }
 
@@ -45,7 +47,7 @@ class ResourceLeakMonitorTestLifecycleExtension(
         registryProvider()?.snapshotAll(
             kind = SnapshotKind.AFTER_EACH,
             testClass = key.testClassName,
-            testMethod = key.testMethodName
+            testMethod = key.testMethodName,
         )
         resourceState.recordTestMethodEnd(key, clock.instant())
     }

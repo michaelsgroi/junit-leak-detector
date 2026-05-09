@@ -6,8 +6,8 @@ class PortMonitor : DiscreteResourceMonitor {
     private val log = LoggerFactory.getLogger(javaClass)
     override val resourceIdClass = ResourceId.PortId::class
 
-    override fun snapshot(): Set<ResourceId> {
-        return try {
+    override fun snapshot(): Set<ResourceId> =
+        try {
             val pid = ProcessHandle.current().pid()
             val os = System.getProperty("os.name", "").lowercase()
             if (os.contains("mac") || os.contains("darwin")) {
@@ -19,34 +19,36 @@ class PortMonitor : DiscreteResourceMonitor {
             log.debug("Failed to gather port resources", e)
             emptySet()
         }
-    }
 
     private fun gatherPortsMacOs(pid: Long): Set<ResourceId> {
-        val process = ProcessBuilder("lsof", "-p", pid.toString(), "-i", "-P", "-n")
-            .redirectErrorStream(true)
-            .start()
+        val process =
+            ProcessBuilder("lsof", "-p", pid.toString(), "-i", "-P", "-n")
+                .redirectErrorStream(true)
+                .start()
         val output = process.inputStream.bufferedReader().readText()
         process.waitFor()
         val pidStr = pid.toString()
-        return output.lines()
+        return output
+            .lines()
             .filter { it.contains("LISTEN") }
             .filter { line ->
                 val parts = line.trim().split("\\s+".toRegex())
                 parts.size >= 2 && parts[1] == pidStr
-            }
-            .mapNotNull { line -> parsePortFromLsofLine(line) }
+            }.mapNotNull { line -> parsePortFromLsofLine(line) }
             .map { ResourceId.PortId(it) }
             .toSet()
     }
 
     private fun gatherPortsLinux(pid: Long): Set<ResourceId> {
-        val process = ProcessBuilder("ss", "-lntp")
-            .redirectErrorStream(true)
-            .start()
+        val process =
+            ProcessBuilder("ss", "-lntp")
+                .redirectErrorStream(true)
+                .start()
         val output = process.inputStream.bufferedReader().readText()
         process.waitFor()
         val pidPattern = "pid=$pid"
-        return output.lines()
+        return output
+            .lines()
             .filter { it.contains(pidPattern) }
             .mapNotNull { line -> parsePortFromSsLine(line) }
             .map { ResourceId.PortId(it) }

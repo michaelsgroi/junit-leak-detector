@@ -9,7 +9,7 @@ class ResourceLeakReporter(
     private val resourceState: ResourceState = ResourceState.instance,
     private val configuration: Configuration = Configuration.instance,
     private val buildFailureAction: () -> Unit = { exitProcess(1) },
-    private val textOutputFile: File? = null
+    private val textOutputFile: File? = null,
 ) {
     private val textLines = mutableListOf<String>()
 
@@ -31,7 +31,11 @@ class ResourceLeakReporter(
         }
 
         reportDiscreteLeaks(ResourceType.SYSTEM_PROPS, "System Property Leaks", "Property") { (it as ResourceId.PropertyId).name }
-        reportDiscreteLeaks(ResourceType.ENV_VARS, "Environment Variable Leaks", "Variable") { (it as ResourceId.EnvironmentVariableId).name }
+        reportDiscreteLeaks(
+            ResourceType.ENV_VARS,
+            "Environment Variable Leaks",
+            "Variable",
+        ) { (it as ResourceId.EnvironmentVariableId).name }
         reportThreadLeaks()
         reportDiscreteLeaks(ResourceType.PORTS, "Port Leaks", "Port") { (it as ResourceId.PortId).port.toString() }
         reportDiscreteLeaks(ResourceType.DDBTABLES, "DynamoDB Table Leaks", "Table") { (it as ResourceId.DynamoDbTableId).name }
@@ -44,7 +48,7 @@ class ResourceLeakReporter(
         resourceType: ResourceType,
         header: String,
         label: String,
-        renderValue: (ResourceId) -> String
+        renderValue: (ResourceId) -> String,
     ) {
         if (!isResourceTypeMonitored(resourceType)) return
         val leaks = leakedDiscrete(resourceType)
@@ -111,7 +115,8 @@ class ResourceLeakReporter(
     private fun isResourceTypeMonitored(resourceType: ResourceType): Boolean {
         val property = configuration.monitoredResourceTypes
         if (property.isBlank()) return false
-        return property.split(",")
+        return property
+            .split(",")
             .map { it.trim() }
             .any { ResourceType.fromConfigValue(it) == resourceType }
     }
@@ -119,22 +124,29 @@ class ResourceLeakReporter(
     private fun checkBuildFailure() {
         val property = configuration.buildFailureResourceTypes
         if (property.isBlank()) return
-        val buildFailureResourceTypes = property.split(",")
-            .map { it.trim() }
-            .mapNotNull { ResourceType.fromConfigValue(it) }
+        val buildFailureResourceTypes =
+            property
+                .split(",")
+                .map { it.trim() }
+                .mapNotNull { ResourceType.fromConfigValue(it) }
 
         val failingResourceTypes = buildFailureResourceTypes.filter { hasLeaksForResourceType(it) }
 
         if (failingResourceTypes.isNotEmpty()) {
-            LOG.error("Build failure triggered - leaks detected for resource types: ${failingResourceTypes.joinToString(", ") { it.configValue }}")
+            LOG.error(
+                "Build failure triggered - leaks detected for resource types: ${failingResourceTypes.joinToString(
+                    ", ",
+                ) { it.configValue }}",
+            )
             buildFailureAction()
         }
     }
 
-    private fun hasLeaksForResourceType(resourceType: ResourceType): Boolean = when (resourceType) {
-        ResourceType.MEMORY -> hasMemoryLeak()
-        else -> leakedDiscrete(resourceType).isNotEmpty()
-    }
+    private fun hasLeaksForResourceType(resourceType: ResourceType): Boolean =
+        when (resourceType) {
+            ResourceType.MEMORY -> hasMemoryLeak()
+            else -> leakedDiscrete(resourceType).isNotEmpty()
+        }
 
     private fun hasMemoryLeak(): Boolean {
         val baseline = resourceState.getBaselineNumeric() ?: return false
@@ -142,14 +154,15 @@ class ResourceLeakReporter(
         return final.value - baseline.value > configuration.memoryGrowthThresholdMb * BYTES_PER_MB
     }
 
-    private fun resourceIdClassFor(resourceType: ResourceType) = when (resourceType) {
-        ResourceType.SYSTEM_PROPS -> ResourceId.PropertyId::class
-        ResourceType.ENV_VARS -> ResourceId.EnvironmentVariableId::class
-        ResourceType.THREADS -> ResourceId.ThreadId::class
-        ResourceType.PORTS -> ResourceId.PortId::class
-        ResourceType.DDBTABLES -> ResourceId.DynamoDbTableId::class
-        ResourceType.MEMORY -> null
-    }
+    private fun resourceIdClassFor(resourceType: ResourceType) =
+        when (resourceType) {
+            ResourceType.SYSTEM_PROPS -> ResourceId.PropertyId::class
+            ResourceType.ENV_VARS -> ResourceId.EnvironmentVariableId::class
+            ResourceType.THREADS -> ResourceId.ThreadId::class
+            ResourceType.PORTS -> ResourceId.PortId::class
+            ResourceType.DDBTABLES -> ResourceId.DynamoDbTableId::class
+            ResourceType.MEMORY -> null
+        }
 
     companion object {
         private val LOG = LoggerFactory.getLogger(ResourceLeakReporter::class.java)

@@ -7,10 +7,13 @@ typealias TestClassName = String
 
 data class TestClassLifecycle(
     val start: Instant,
-    val end: Instant
+    val end: Instant,
 )
 
-data class TestMethodKey(val testClassName: TestClassName, val testMethodName: String)
+data class TestMethodKey(
+    val testClassName: TestClassName,
+    val testMethodName: String,
+)
 
 class ResourceState {
     private val testClassLifecycles = mutableMapOf<TestClassName, TestClassLifecycle>()
@@ -20,20 +23,32 @@ class ResourceState {
     private var baselineNumeric: NumericResourceMeasurement? = null
     private var currentNumeric: NumericResourceMeasurement? = null
 
-    fun recordTestClassStart(testClassName: TestClassName, startTimestamp: Instant) {
+    fun recordTestClassStart(
+        testClassName: TestClassName,
+        startTimestamp: Instant,
+    ) {
         testClassLifecycles[testClassName] = TestClassLifecycle(start = startTimestamp, end = startTimestamp)
     }
 
-    fun recordTestClassEnd(testClassName: TestClassName, endTimestamp: Instant) {
+    fun recordTestClassEnd(
+        testClassName: TestClassName,
+        endTimestamp: Instant,
+    ) {
         val existing = testClassLifecycles[testClassName] ?: return
         testClassLifecycles[testClassName] = existing.copy(end = endTimestamp)
     }
 
-    fun recordTestMethodStart(key: TestMethodKey, startTimestamp: Instant) {
+    fun recordTestMethodStart(
+        key: TestMethodKey,
+        startTimestamp: Instant,
+    ) {
         testMethodLifecycles[key] = TestClassLifecycle(start = startTimestamp, end = startTimestamp)
     }
 
-    fun recordTestMethodEnd(key: TestMethodKey, endTimestamp: Instant) {
+    fun recordTestMethodEnd(
+        key: TestMethodKey,
+        endTimestamp: Instant,
+    ) {
         val existing = testMethodLifecycles[key] ?: return
         testMethodLifecycles[key] = existing.copy(end = endTimestamp)
     }
@@ -42,20 +57,24 @@ class ResourceState {
 
     fun getAllTestMethodLifecycles(): Map<TestMethodKey, TestClassLifecycle> = testMethodLifecycles.toMap()
 
-    fun recordBaselineDiscrete(resourceIdType: KClass<out ResourceId>, resources: Set<ResourceId>) {
+    fun recordBaselineDiscrete(
+        resourceIdType: KClass<out ResourceId>,
+        resources: Set<ResourceId>,
+    ) {
         baselineDiscrete[resourceIdType] = resources.toSet()
         currentDiscrete[resourceIdType] = resources.toSet()
     }
 
-    fun updateCurrentDiscrete(resourceIdType: KClass<out ResourceId>, resources: Set<ResourceId>) {
+    fun updateCurrentDiscrete(
+        resourceIdType: KClass<out ResourceId>,
+        resources: Set<ResourceId>,
+    ) {
         currentDiscrete[resourceIdType] = resources.toSet()
     }
 
-    fun getBaselineDiscrete(resourceIdType: KClass<out ResourceId>): Set<ResourceId> =
-        baselineDiscrete[resourceIdType].orEmpty()
+    fun getBaselineDiscrete(resourceIdType: KClass<out ResourceId>): Set<ResourceId> = baselineDiscrete[resourceIdType].orEmpty()
 
-    fun getCurrentDiscrete(resourceIdType: KClass<out ResourceId>): Set<ResourceId> =
-        currentDiscrete[resourceIdType].orEmpty()
+    fun getCurrentDiscrete(resourceIdType: KClass<out ResourceId>): Set<ResourceId> = currentDiscrete[resourceIdType].orEmpty()
 
     fun recordBaselineNumeric(measurement: NumericResourceMeasurement) {
         baselineNumeric = measurement

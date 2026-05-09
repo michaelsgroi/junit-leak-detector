@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class DynamoDbLocalTableMonitorTest {
-
     @Test
     fun `snapshot returns empty set when DynamoDB Local not running`() {
         // Use a port that is unlikely to have DynamoDB Local running
