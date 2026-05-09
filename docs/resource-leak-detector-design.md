@@ -14,9 +14,25 @@ The component is split into three independent pieces (per the Architecture secti
 - **C2 — Second run (optional).** Drives the test runner a second time with a different Surefire `runOrder`; emits its own raw report.
 - **C3 — Attribution.** Independent post-processor. Consumes one or two raw reports; computes the candidate set per leak; emits the final human-readable leak report.
 
-All components live in package `com.salesforce.test.extensions.resourceleak`.
+All component code lives in package `com.salesforce.test.extensions.resourceleak`.
 
 All timestamps use ISO8601 format.
+
+### Repo Layout
+
+The project is a multi-module Maven build. The root pom is `packaging=pom` and aggregates four sibling modules:
+
+```
+junit-leak-detector/                     ← parent (packaging=pom)
+├── library/                             ← C1: detector library (the JAR consumers depend on)
+├── attribution/                         ← C3: attribution module (reusable lib + standalone CLI)
+├── orchestrator/                        ← C2: Maven plugin for double-run mode
+└── integration-tests/                   ← aggregator
+    ├── basic/
+    └── ddb/
+```
+
+Only `library`, `attribution`, and `orchestrator` are publishable. `integration-tests/*` are test-only and not deployed.
 
 ### Packaging and Distribution
 
@@ -72,11 +88,12 @@ JUnit Jupiter `Extension` that drives per-class (default) or per-test (opt-in) s
 
 **ResourceState**
 
-Singleton holding all data captured during a run.
+Singleton holding the **small, in-memory** state needed during a run. Snapshot history is *not* held here — it is streamed to disk by `RawReportWriter` as each callback fires (see [Streaming write](#streaming-write)). The size difference matters: a zos-sized run produces ~100 MB of snapshot history but the live state is only KB-scale.
 
-* **Per-class lifecycles**: `Map<TestClassName, TestClassLifecycle>`.
-* **Snapshots**: an ordered list of `Snapshot` objects, each with a timestamp, a snapshot kind (`BASELINE`, `BEFORE_ALL`, `BEFORE_EACH`, `AFTER_EACH`, `AFTER_ALL`, `FINAL`), the test class and method (where applicable), and the per-monitor resource sets / numeric measurements captured at that boundary.
-* **No polling-based fields, no `last detected time`, no `destroyed time`**: these were polling-era artifacts. With boundary-only snapshots, presence/absence at each snapshot is enough.
+* **Current state**: per-monitor last-observed discrete resource sets and last-observed numeric values. Used by `ResourceLeakReporter` to compute the leak list (final - baseline) and to feed `RawReportWriter` at each callback.
+* **Baseline state**: per-monitor baseline discrete sets / numeric values, captured in `testPlanExecutionStarted`. Used to suppress baseline resources from leak detection (REQ-1.2.3).
+* **Per-class lifecycles**: `Map<TestClassName, TestClassLifecycle>`. Per-test intervals also recorded when `snapshot.granularity=test`.
+* **No polling-era fields**: no `last detected time`, no `destroyed time`. With boundary-only snapshots, presence/absence at each snapshot is enough.
 
 **ResourceMonitor**
 
@@ -170,7 +187,9 @@ The schema is the contract between C1 and C3 (REQ-2.3.2): everything C3 needs to
 
 ## C2 — Second Run (Optional)
 
-When double-run mode is enabled (REQ-2.4.1), C2 invokes the test suite twice. **C2 controls the full Surefire configuration for both runs** so neither run depends on whatever Surefire defaults the project happens to have. Flags C2 sets explicitly on each invocation:
+C2 is packaged as a **Maven plugin** (the `orchestrator` module). Distributed via the same Maven artifact pipeline as the library, versioned alongside it, and invoked by users as `mvn com.salesforce.test:junit-leak-detector-orchestrator:run` (or via a binding in their pom). A plugin is preferred over a shell script because it's portable across CI environments, native to the Maven workflow consumers already use, and avoids shipping a separate distribution channel.
+
+When double-run mode is enabled (REQ-2.4.1), the plugin invokes the test suite twice. **C2 controls the full Surefire configuration for both runs** so neither run depends on whatever Surefire defaults the project happens to have. Flags C2 sets explicitly on each invocation:
 
 - `surefire.runOrder` — `alphabetical` for run 1, `random` for run 2
 - `surefire.runOrderRandomSeed` — generated and recorded for run 2 (REQ-2.4.3)
