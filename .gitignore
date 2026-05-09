@@ -26,6 +26,3 @@ dynamodb-local-metadata.json
 *.tmp
 *.swp
 *~
-
-# Internal docs (kept locally, not checked in)
-docs/
