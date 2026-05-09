@@ -28,6 +28,11 @@ class Configuration(
     val buildFailureResourceTypes: String
         get() = read("build.failure.resource.types") ?: ""
 
+    val snapshotGranularity: SnapshotGranularity
+        get() = read("snapshot.granularity")
+            ?.let { SnapshotGranularity.fromConfigValue(it) }
+            ?: SnapshotGranularity.CLASS
+
     private fun read(key: String): String? {
         val systemValue = systemPropertyLookup(SYSTEM_PROPERTY_PREFIX + key)
         if (!systemValue.isNullOrBlank()) {

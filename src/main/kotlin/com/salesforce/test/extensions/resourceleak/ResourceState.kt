@@ -10,8 +10,11 @@ data class TestClassLifecycle(
     val end: Instant
 )
 
+data class TestMethodKey(val testClassName: TestClassName, val testMethodName: String)
+
 class ResourceState {
     private val testClassLifecycles = mutableMapOf<TestClassName, TestClassLifecycle>()
+    private val testMethodLifecycles = mutableMapOf<TestMethodKey, TestClassLifecycle>()
     private val baselineDiscrete = mutableMapOf<KClass<out ResourceId>, Set<ResourceId>>()
     private val currentDiscrete = mutableMapOf<KClass<out ResourceId>, Set<ResourceId>>()
     private var baselineNumeric: NumericResourceMeasurement? = null
@@ -26,7 +29,18 @@ class ResourceState {
         testClassLifecycles[testClassName] = existing.copy(end = endTimestamp)
     }
 
+    fun recordTestMethodStart(key: TestMethodKey, startTimestamp: Instant) {
+        testMethodLifecycles[key] = TestClassLifecycle(start = startTimestamp, end = startTimestamp)
+    }
+
+    fun recordTestMethodEnd(key: TestMethodKey, endTimestamp: Instant) {
+        val existing = testMethodLifecycles[key] ?: return
+        testMethodLifecycles[key] = existing.copy(end = endTimestamp)
+    }
+
     fun getAllTestClassLifecycles(): Map<TestClassName, TestClassLifecycle> = testClassLifecycles.toMap()
+
+    fun getAllTestMethodLifecycles(): Map<TestMethodKey, TestClassLifecycle> = testMethodLifecycles.toMap()
 
     fun recordBaselineDiscrete(resourceIdType: KClass<out ResourceId>, resources: Set<ResourceId>) {
         baselineDiscrete[resourceIdType] = resources.toSet()

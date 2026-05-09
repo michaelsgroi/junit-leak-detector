@@ -13,6 +13,21 @@ class ConfigurationTest {
         assertEquals(10L, config.threadGracePeriodSeconds)
         assertEquals(1024L, config.memoryGrowthThresholdMb)
         assertEquals("", config.buildFailureResourceTypes)
+        assertEquals(SnapshotGranularity.CLASS, config.snapshotGranularity)
+    }
+
+    @Test
+    fun `snapshot granularity reads from properties`() {
+        val props = Properties().apply { setProperty("snapshot.granularity", "test") }
+        val config = Configuration(propertiesLoader = { props }, systemPropertyLookup = { null })
+        assertEquals(SnapshotGranularity.TEST, config.snapshotGranularity)
+    }
+
+    @Test
+    fun `snapshot granularity falls back to default for unknown value`() {
+        val props = Properties().apply { setProperty("snapshot.granularity", "garbage") }
+        val config = Configuration(propertiesLoader = { props }, systemPropertyLookup = { null })
+        assertEquals(SnapshotGranularity.CLASS, config.snapshotGranularity)
     }
 
     @Test
