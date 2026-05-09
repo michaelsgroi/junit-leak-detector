@@ -162,41 +162,55 @@ The delta lives as a private mutable field on `ResourceLeakMonitorTestLifecycleE
 
 ### Raw report (C1 output)
 
-The raw report is a structured JSON document written to `target/resource-leak-detector/raw-report.json`. Schema:
+The raw report is written to `target/resource-leak-detector/raw-report.json` (configurable via `raw.report.output.path`) as [JSON Lines](https://jsonlines.org/): one self-describing JSON object per line, distinguished by the `type` field. Three record types appear, in order: a single `header` line at suite start, one `snapshot` line per lifecycle callback, and a single `footer` line at suite end with the per-class lifecycle map.
+
+Schema:
 
 ```
+# header — first line, written from testPlanExecutionStarted
 {
+  "type": "header",
   "runId": "<uuid>",
   "startedAt": "<iso8601>",
-  "finishedAt": "<iso8601>",
-  "config": { ... },                        // resolved config (snapshotted)
-  "surefire": {
-    "runOrder": "alphabetical",
-    "runOrderRandomSeed": null              // populated for second run
-  },
   "monitors": ["ports", "threads", ...],
+  "snapshotGranularity": "class" | "test"
+}
+
+# snapshot — one per active callback (BASELINE, BEFORE_ALL, BEFORE_EACH, AFTER_EACH, AFTER_ALL, FINAL)
+{
+  "type": "snapshot",
+  "kind": "BASELINE" | "BEFORE_ALL" | "BEFORE_EACH" | "AFTER_EACH" | "AFTER_ALL" | "FINAL",
+  "timestamp": "<iso8601>",
+  "testClass": "<fqcn>" | null,
+  "testMethod": "<methodName>" | null,
+  "discrete": {
+    "ports":      [<int>, ...],
+    "threads":    [{"name": "<string>", "id": "<long-as-string>"}, ...],
+    "systemprops":[<string>, ...],
+    "envvars":    [<string>, ...],
+    "ddbtables":  [<string>, ...]
+  },
+  "numeric": {
+    "memory": {"value": "<long-as-string>", "timestamp": "<iso8601>"}
+  }
+}
+
+# footer — last line, written from testPlanExecutionFinished
+{
+  "type": "footer",
+  "finishedAt": "<iso8601>",
   "lifecycles": [
-    { "testClass": "...", "start": "...", "end": "..." },
-    ...
-  ],
-  "snapshotGranularity": "class" | "test",
-  "snapshots": [
-    {
-      "kind": "BASELINE" | "BEFORE_ALL" | "BEFORE_EACH" | "AFTER_EACH" | "AFTER_ALL" | "FINAL",
-      "timestamp": "...",
-      "testClass": "..." | null,
-      "testMethod": "..." | null,
-      "discrete": { "ports": [...], "threads": [...], ... },          // full resource set at this boundary
-      "numeric":  { "memory": <bytes> }
-    },
+    { "testClass": "<fqcn>", "start": "<iso8601>", "end": "<iso8601>" },
     ...
   ]
 }
 ```
 
-Each snapshot records the full resource set observed at that boundary. C3 computes deltas between consecutive snapshots when needed for attribution; the on-disk format itself is uncompressed for simplicity and readability.
+Each snapshot records the full resource set observed at that boundary. Discrete resource keys correspond to the same config-value names accepted in `monitored.resource.types`; a key only appears if its monitor is enabled. Numeric values and thread IDs are emitted as JSON strings to avoid loss of precision (Long > 2^53). C3 computes deltas between consecutive snapshots when needed for attribution; the on-disk format itself is uncompressed for simplicity and readability.
 
 Estimated size for the zos suite (~841 test classes, per-class snapshots): ~60 KB/snapshot × ~1,684 snapshots ≈ ~100 MB per run. Acceptable for v1; revisit with delta encoding or compression if it becomes unwieldy in practice.
+
+A separate human-readable text report is written alongside as `leak-report.txt` (sibling of the raw report). The text report mirrors the existing logged output and serves as the user-facing leak summary; the raw report is the machine-readable contract consumed by C3.
 
 ### Streaming write
 
@@ -366,6 +380,7 @@ preflight.enabled=true
 | `preclass.settle.max.seconds` | `10` | Maximum total time to wait for carry-over resources to clear. |
 | `preclass.settle.poll.interval.seconds` | `1` | Poll interval while waiting. |
 | `preflight.enabled` | `true` | Disable only for advanced users with custom build flows. |
+| `raw.report.output.path` | `target/resource-leak-detector/raw-report.json` | Path of the streaming JSON Lines raw report. The human-readable text report is written as `leak-report.txt` in the same directory. |
 
 When the Maven dependency is commented out to disable the component, the properties file remains on disk unused.
 

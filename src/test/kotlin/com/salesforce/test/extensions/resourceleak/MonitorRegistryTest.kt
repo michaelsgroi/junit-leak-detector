@@ -104,6 +104,32 @@ class MonitorRegistryTest {
     }
 
     @Test
+    fun `captureBaseline and snapshotAll emit records to the raw report writer`(@org.junit.jupiter.api.io.TempDir tempDir: java.nio.file.Path) {
+        val outputFile = tempDir.resolve("raw.json").toFile()
+        val writer = RawReportWriter(outputFile, runId = "r")
+        writer.open(java.time.Instant.EPOCH, listOf("systemprops"), SnapshotGranularity.CLASS)
+        val state = ResourceState()
+        val clock = TestClock(0L)
+        val registry = MonitorRegistry(
+            resourceState = state,
+            clock = clock,
+            configuration = configWith("systemprops"),
+            rawReportWriter = writer
+        )
+
+        registry.captureBaseline()
+        registry.snapshotAll(kind = SnapshotKind.BEFORE_ALL, testClass = "com.A")
+        writer.closeWith(java.time.Instant.EPOCH, emptyMap())
+
+        val lines = outputFile.readLines()
+        // header + baseline + before_all + footer
+        assertEquals(4, lines.size)
+        assertTrue(lines[1].contains(""""kind":"BASELINE""""))
+        assertTrue(lines[2].contains(""""kind":"BEFORE_ALL""""))
+        assertTrue(lines[2].contains(""""testClass":"com.A""""))
+    }
+
+    @Test
     fun `hasAny returns false when no resource types configured`() {
         val registry = MonitorRegistry(
             ResourceState(),

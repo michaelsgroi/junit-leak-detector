@@ -17,32 +17,36 @@ class ResourceLeakMonitorTestLifecycleExtension(
 ) : BeforeAllCallback, AfterAllCallback, BeforeEachCallback, AfterEachCallback {
 
     override fun beforeAll(extensionContext: ExtensionContext) {
-        resourceState.recordTestClassStart(
-            testClassName = extensionContext.requiredTestClass.name,
-            startTimestamp = clock.instant()
-        )
-        registryProvider()?.snapshotAll()
+        val testClassName = extensionContext.requiredTestClass.name
+        resourceState.recordTestClassStart(testClassName, clock.instant())
+        registryProvider()?.snapshotAll(kind = SnapshotKind.BEFORE_ALL, testClass = testClassName)
     }
 
     override fun afterAll(extensionContext: ExtensionContext) {
-        registryProvider()?.snapshotAll()
-        resourceState.recordTestClassEnd(
-            testClassName = extensionContext.requiredTestClass.name,
-            endTimestamp = clock.instant()
-        )
+        val testClassName = extensionContext.requiredTestClass.name
+        registryProvider()?.snapshotAll(kind = SnapshotKind.AFTER_ALL, testClass = testClassName)
+        resourceState.recordTestClassEnd(testClassName, clock.instant())
     }
 
     override fun beforeEach(extensionContext: ExtensionContext) {
         if (configuration.snapshotGranularity != SnapshotGranularity.TEST) return
         val key = methodKey(extensionContext) ?: return
         resourceState.recordTestMethodStart(key, clock.instant())
-        registryProvider()?.snapshotAll()
+        registryProvider()?.snapshotAll(
+            kind = SnapshotKind.BEFORE_EACH,
+            testClass = key.testClassName,
+            testMethod = key.testMethodName
+        )
     }
 
     override fun afterEach(extensionContext: ExtensionContext) {
         if (configuration.snapshotGranularity != SnapshotGranularity.TEST) return
         val key = methodKey(extensionContext) ?: return
-        registryProvider()?.snapshotAll()
+        registryProvider()?.snapshotAll(
+            kind = SnapshotKind.AFTER_EACH,
+            testClass = key.testClassName,
+            testMethod = key.testMethodName
+        )
         resourceState.recordTestMethodEnd(key, clock.instant())
     }
 

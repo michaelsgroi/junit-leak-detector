@@ -33,6 +33,9 @@ class Configuration(
             ?.let { SnapshotGranularity.fromConfigValue(it) }
             ?: SnapshotGranularity.CLASS
 
+    val rawReportOutputPath: String
+        get() = read("raw.report.output.path") ?: "target/resource-leak-detector/raw-report.json"
+
     private fun read(key: String): String? {
         val systemValue = systemPropertyLookup(SYSTEM_PROPERTY_PREFIX + key)
         if (!systemValue.isNullOrBlank()) {

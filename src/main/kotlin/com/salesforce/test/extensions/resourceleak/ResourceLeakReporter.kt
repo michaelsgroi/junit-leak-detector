@@ -1,28 +1,32 @@
 package com.salesforce.test.extensions.resourceleak
 
 import org.slf4j.LoggerFactory
+import java.io.File
 import java.time.Duration
 import kotlin.system.exitProcess
 
 class ResourceLeakReporter(
     private val resourceState: ResourceState = ResourceState.instance,
     private val configuration: Configuration = Configuration.instance,
-    private val buildFailureAction: () -> Unit = { exitProcess(1) }
+    private val buildFailureAction: () -> Unit = { exitProcess(1) },
+    private val textOutputFile: File? = null
 ) {
+    private val textLines = mutableListOf<String>()
+
     fun report() {
         val testClassLifecycles = resourceState.getAllTestClassLifecycles()
         val testClassCount = testClassLifecycles.size
 
-        LOG.info("Resource Leak Detector Report")
-        LOG.info("==============================")
-        LOG.info("Test Classes Executed: $testClassCount")
+        emit("Resource Leak Detector Report")
+        emit("==============================")
+        emit("Test Classes Executed: $testClassCount")
 
         if (testClassCount > 0) {
-            LOG.info("")
-            LOG.info("Test Class Execution Times:")
+            emit("")
+            emit("Test Class Execution Times:")
             testClassLifecycles.forEach { (testClassName, lifecycle) ->
                 val durationMillis = Duration.between(lifecycle.start, lifecycle.end).toMillis()
-                LOG.info("  - $testClassName: ${durationMillis}ms")
+                emit("  - $testClassName: ${durationMillis}ms")
             }
         }
 
@@ -32,6 +36,7 @@ class ResourceLeakReporter(
         reportDiscreteLeaks(ResourceType.PORTS, "Port Leaks", "Port") { (it as ResourceId.PortId).port.toString() }
         reportDiscreteLeaks(ResourceType.DDBTABLES, "DynamoDB Table Leaks", "Table") { (it as ResourceId.DynamoDbTableId).name }
         reportMemoryLeaks()
+        flushTextFile()
         checkBuildFailure()
     }
 
@@ -45,10 +50,10 @@ class ResourceLeakReporter(
         val leaks = leakedDiscrete(resourceType)
         if (leaks.isEmpty()) return
 
-        LOG.info("")
-        LOG.info("$header:")
+        emit("")
+        emit("$header:")
         leaks.forEach { resourceId ->
-            LOG.info("  - $label: ${renderValue(resourceId)}")
+            emit("  - $label: ${renderValue(resourceId)}")
         }
     }
 
@@ -57,11 +62,11 @@ class ResourceLeakReporter(
         val leaks = leakedDiscrete(ResourceType.THREADS)
         if (leaks.isEmpty()) return
 
-        LOG.info("")
-        LOG.info("Thread Leaks:")
+        emit("")
+        emit("Thread Leaks:")
         leaks.forEach { resourceId ->
             val threadId = resourceId as ResourceId.ThreadId
-            LOG.info("  - Thread: ${threadId.name} (ID: ${threadId.id})")
+            emit("  - Thread: ${threadId.name} (ID: ${threadId.id})")
         }
     }
 
@@ -78,11 +83,22 @@ class ResourceLeakReporter(
         val finalMb = final.value / BYTES_PER_MB
         val increaseMb = growthBytes / BYTES_PER_MB
 
-        LOG.info("")
-        LOG.info("Memory Leaks:")
-        LOG.info("  - Baseline: $baselineMb MB")
-        LOG.info("  - Final: $finalMb MB")
-        LOG.info("  - Increase: $increaseMb MB")
+        emit("")
+        emit("Memory Leaks:")
+        emit("  - Baseline: $baselineMb MB")
+        emit("  - Final: $finalMb MB")
+        emit("  - Increase: $increaseMb MB")
+    }
+
+    private fun emit(line: String) {
+        LOG.info(line)
+        textLines += line
+    }
+
+    private fun flushTextFile() {
+        val file = textOutputFile ?: return
+        file.parentFile?.mkdirs()
+        file.writeText(textLines.joinToString(System.lineSeparator()) + System.lineSeparator())
     }
 
     private fun leakedDiscrete(resourceType: ResourceType): Set<ResourceId> {

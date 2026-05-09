@@ -6,7 +6,8 @@ class MonitorRegistry(
     private val resourceState: ResourceState = ResourceState.instance,
     private val clock: Clock = Clock.systemUTC(),
     private val classPresent: (String) -> Boolean = ::defaultClassPresent,
-    configuration: Configuration = Configuration.instance
+    configuration: Configuration = Configuration.instance,
+    private val rawReportWriter: RawReportWriter? = null
 ) {
     private val discreteMonitors: List<DiscreteResourceMonitor>
     private val numericMonitors: List<NumericResourceMonitor>
@@ -43,21 +44,49 @@ class MonitorRegistry(
     }
 
     fun captureBaseline() {
-        discreteMonitors.forEach { monitor ->
-            resourceState.recordBaselineDiscrete(monitor.resourceIdClass, monitor.snapshot())
-        }
-        numericMonitors.forEach { monitor ->
-            resourceState.recordBaselineNumeric(monitor.snapshot())
-        }
+        val timestamp = clock.instant()
+        val discrete = collectDiscrete(record = resourceState::recordBaselineDiscrete)
+        val numeric = collectNumeric(record = resourceState::recordBaselineNumeric)
+        rawReportWriter?.appendSnapshot(
+            Snapshot(SnapshotKind.BASELINE, timestamp, null, null, discrete, numeric)
+        )
     }
 
-    fun snapshotAll() {
+    fun snapshotAll(
+        kind: SnapshotKind = SnapshotKind.FINAL,
+        testClass: String? = null,
+        testMethod: String? = null
+    ) {
+        val timestamp = clock.instant()
+        val discrete = collectDiscrete(record = resourceState::updateCurrentDiscrete)
+        val numeric = collectNumeric(record = resourceState::updateCurrentNumeric)
+        rawReportWriter?.appendSnapshot(
+            Snapshot(kind, timestamp, testClass, testMethod, discrete, numeric)
+        )
+    }
+
+    private fun collectDiscrete(
+        record: (kotlin.reflect.KClass<out ResourceId>, Set<ResourceId>) -> Unit
+    ): Map<kotlin.reflect.KClass<out ResourceId>, Set<ResourceId>> {
+        val out = mutableMapOf<kotlin.reflect.KClass<out ResourceId>, Set<ResourceId>>()
         discreteMonitors.forEach { monitor ->
-            resourceState.updateCurrentDiscrete(monitor.resourceIdClass, monitor.snapshot())
+            val ids = monitor.snapshot()
+            record(monitor.resourceIdClass, ids)
+            out[monitor.resourceIdClass] = ids
         }
+        return out
+    }
+
+    private fun collectNumeric(
+        record: (NumericResourceMeasurement) -> Unit
+    ): Map<String, NumericResourceMeasurement> {
+        val out = mutableMapOf<String, NumericResourceMeasurement>()
         numericMonitors.forEach { monitor ->
-            resourceState.updateCurrentNumeric(monitor.snapshot())
+            val measurement = monitor.snapshot()
+            record(measurement)
+            out[ResourceType.MEMORY.configValue] = measurement
         }
+        return out
     }
 
     fun hasAny(): Boolean = discreteMonitors.isNotEmpty() || numericMonitors.isNotEmpty()
