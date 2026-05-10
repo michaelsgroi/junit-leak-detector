@@ -49,6 +49,28 @@ class ResourceLeakMonitor : TestExecutionListener {
     }
 
     override fun testPlanExecutionFinished(testPlan: TestPlan) {
+        val configuration = Configuration.instance
+        val r = registry
+
+        // Run suite-shared shutdown hooks (e.g., SpringContextShutdownHook) so threads
+        // and ports owned by cached infrastructure get released before the FINAL
+        // snapshot. Anything they release naturally drops out of the leak list because
+        // attribution treats "absent at FINAL" as not-a-leak.
+        SuiteShutdownRunner().runAll()
+
+        // Drain async releases triggered by the hooks (Tomcat connector close, scheduler
+        // shutdown, connection pool drain, etc.) before snapshotting. The snapshot
+        // itself is what attribution operates on; if a released thread is still in the
+        // FINAL snapshot, it's a real leak.
+        if (configuration.finalSettleEnabled && r != null) {
+            val waiter = PreclassSettleWaiter.forFinal(configuration)
+            // Treat all currently-alive threads/ports as the "carry-over set" the wait
+            // is draining — we want everything that's going to die from the hooks to
+            // die before we snapshot.
+            val current = r.probeDiscrete(setOf(ResourceType.THREADS, ResourceType.PORTS))
+            waiter.waitForSettle(previousClassDelta = current) { types -> r.probeDiscrete(types) }
+        }
+
         registry?.snapshotAll(kind = SnapshotKind.FINAL)
         SharedMonitorRegistry.clear()
         rawReportWriter?.closeWith(

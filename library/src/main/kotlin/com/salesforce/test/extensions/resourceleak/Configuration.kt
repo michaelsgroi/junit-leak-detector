@@ -46,6 +46,15 @@ class Configuration(
     val preclassSettlePollIntervalSeconds: Long
         get() = read("preclass.settle.poll.interval.seconds")?.toLong() ?: 1L
 
+    val finalSettleEnabled: Boolean
+        get() = read("final.settle.enabled")?.toBooleanStrictOrNull() ?: true
+
+    val finalSettleMaxSeconds: Long
+        get() = read("final.settle.max.seconds")?.toLong() ?: 10L
+
+    val finalSettlePollIntervalSeconds: Long
+        get() = read("final.settle.poll.interval.seconds")?.toLong() ?: 1L
+
     private fun read(key: String): String? {
         val systemValue = systemPropertyLookup(SYSTEM_PROPERTY_PREFIX + key)
         if (!systemValue.isNullOrBlank()) {

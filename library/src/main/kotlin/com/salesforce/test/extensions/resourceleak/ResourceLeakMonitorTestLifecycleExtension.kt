@@ -14,7 +14,7 @@ class ResourceLeakMonitorTestLifecycleExtension(
     private val clock: Clock = Clock.systemUTC(),
     private val configuration: Configuration = Configuration.instance,
     private val registryProvider: () -> MonitorRegistry? = { SharedMonitorRegistry.get() },
-    private val settleWaiter: PreclassSettleWaiter = PreclassSettleWaiter(configuration),
+    private val settleWaiter: PreclassSettleWaiter = PreclassSettleWaiter.forPreclass(configuration),
 ) : BeforeAllCallback,
     AfterAllCallback,
     BeforeEachCallback,

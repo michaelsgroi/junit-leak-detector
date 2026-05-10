@@ -113,7 +113,7 @@ class ResourceLeakMonitorTestLifecycleExtensionTest {
     fun `pre-class settle is not invoked when disabled`() {
         var settleCalls = 0
         val fakeWaiter =
-            object : PreclassSettleWaiter(Configuration(propertiesLoader = { Properties() }, systemPropertyLookup = { null })) {
+            object : PreclassSettleWaiter(maxSeconds = 10L, pollIntervalSeconds = 1L) {
                 override fun waitForSettle(
                     previousClassDelta: Map<ResourceType, Set<ResourceId>>,
                     probe: (Set<ResourceType>) -> Map<ResourceType, Set<ResourceId>>,
@@ -138,7 +138,7 @@ class ResourceLeakMonitorTestLifecycleExtensionTest {
     fun `pre-class settle is invoked at second BeforeAll when enabled`() {
         var settleCalls = 0
         val fakeWaiter =
-            object : PreclassSettleWaiter(Configuration(propertiesLoader = { Properties() }, systemPropertyLookup = { null })) {
+            object : PreclassSettleWaiter(maxSeconds = 10L, pollIntervalSeconds = 1L) {
                 override fun waitForSettle(
                     previousClassDelta: Map<ResourceType, Set<ResourceId>>,
                     probe: (Set<ResourceType>) -> Map<ResourceType, Set<ResourceId>>,

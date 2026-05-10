@@ -60,6 +60,25 @@
             <version>1.5.6</version>
             <scope>test</scope>
         </dependency>
+        <!--
+            Spring is a provided dependency: the SpringContextShutdownHook compiles
+            against Spring's TestContext API but the dep is not transitive. Consumers
+            using @SpringBootTest already have spring-test on their test classpath; the
+            hook does a Class.forName probe at runtime and silently no-ops for
+            non-Spring consumers.
+        -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-test</artifactId>
+            <version>6.1.14</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+            <version>6.1.14</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>
