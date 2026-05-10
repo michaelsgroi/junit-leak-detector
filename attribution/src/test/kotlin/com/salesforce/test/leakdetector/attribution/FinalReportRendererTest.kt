@@ -154,14 +154,10 @@ class FinalReportRendererTest {
     fun `renderHtml says no leaks detected when both lists are empty`() {
         val html = FinalReportRenderer.renderHtml(FinalReport(emptyList(), emptyList()))
         assertTrue(html.contains("No leaks detected"))
-        // Summary table is always rendered; with no monitored types it shows all
-        // resource types as "not monitored" with em-dash counts and total of 0.
+        // Summary is always rendered; with no monitored types every count cell is "disabled".
         assertTrue(html.contains("<h2>Summary</h2>"))
-        assertTrue(html.contains("not monitored"))
-        // No row has the "monitored" status (the negative check must not match the
-        // "not monitored" substring).
-        assertTrue(!Regex("<td>monitored</td>").containsMatchIn(html))
-        // All count cells are em-dashes; total is 0.
+        assertTrue(html.contains(">disabled</td>"))
+        // No row shows a numeric count.
         assertTrue(!Regex("class=\"mono\">[0-9]+</td>").containsMatchIn(html))
         assertTrue(Regex("<strong>Total</strong></td>\\s*<td[^>]*><strong>0</strong>").containsMatchIn(html))
     }
@@ -188,14 +184,14 @@ class FinalReportRendererTest {
         assertTrue(html.contains("<h2>Summary</h2>"))
 
         // Monitored types: count cell shows the actual leak count (including 0).
-        assertTrue(Regex("Network Port Leaks</td><td>monitored</td><td[^>]*>2</td>").containsMatchIn(html))
-        assertTrue(Regex("Thread Leaks</td><td>monitored</td><td[^>]*>1</td>").containsMatchIn(html))
-        assertTrue(Regex("Memory Leaks</td><td>monitored</td><td[^>]*>1</td>").containsMatchIn(html))
+        assertTrue(Regex("Network Port Leaks</td><td[^>]*>2</td>").containsMatchIn(html))
+        assertTrue(Regex("Thread Leaks</td><td[^>]*>1</td>").containsMatchIn(html))
+        assertTrue(Regex("Memory Leaks</td><td[^>]*>1</td>").containsMatchIn(html))
 
-        // Not-monitored types: status "not monitored", count em-dash.
-        assertTrue(Regex("System Property Leaks</td><td>not monitored</td><td[^>]*>&mdash;</td>").containsMatchIn(html))
-        assertTrue(Regex("Environment Variable Leaks</td><td>not monitored</td><td[^>]*>&mdash;</td>").containsMatchIn(html))
-        assertTrue(Regex("DynamoDB Table Leaks</td><td>not monitored</td><td[^>]*>&mdash;</td>").containsMatchIn(html))
+        // Not-monitored types: count cell shows "disabled".
+        assertTrue(Regex("System Property Leaks</td><td[^>]*>disabled</td>").containsMatchIn(html))
+        assertTrue(Regex("Environment Variable Leaks</td><td[^>]*>disabled</td>").containsMatchIn(html))
+        assertTrue(Regex("DynamoDB Table Leaks</td><td[^>]*>disabled</td>").containsMatchIn(html))
 
         // Total counts only monitored types.
         assertTrue(Regex("<strong>Total</strong></td>\\s*<td[^>]*><strong>4</strong>").containsMatchIn(html))
@@ -215,8 +211,8 @@ class FinalReportRendererTest {
                 monitoredTypes = listOf("ports", "threads"),
             )
         val html = FinalReportRenderer.renderHtml(report)
-        assertTrue(Regex("Network Port Leaks</td><td>monitored</td><td[^>]*>0</td>").containsMatchIn(html))
-        assertTrue(Regex("Thread Leaks</td><td>monitored</td><td[^>]*>0</td>").containsMatchIn(html))
-        assertTrue(Regex("System Property Leaks</td><td>not monitored</td><td[^>]*>&mdash;</td>").containsMatchIn(html))
+        assertTrue(Regex("Network Port Leaks</td><td[^>]*>0</td>").containsMatchIn(html))
+        assertTrue(Regex("Thread Leaks</td><td[^>]*>0</td>").containsMatchIn(html))
+        assertTrue(Regex("System Property Leaks</td><td[^>]*>disabled</td>").containsMatchIn(html))
     }
 }

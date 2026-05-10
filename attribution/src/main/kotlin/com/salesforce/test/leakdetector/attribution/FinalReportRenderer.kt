@@ -156,7 +156,7 @@ object FinalReportRenderer {
 
         sb.appendLine("  <h2>Summary</h2>")
         sb.appendLine("  <table>")
-        sb.appendLine("    <tr><th>Leak Type</th><th>Status</th><th>Count</th></tr>")
+        sb.appendLine("    <tr><th>Leak Type</th><th>Count</th></tr>")
         var monitoredTotal = 0
         for (type in ALL_RESOURCE_TYPES) {
             val label = headerFor(type).removeSuffix(":")
@@ -167,20 +167,17 @@ object FinalReportRenderer {
                     type == "memory" -> report.memoryLeaks.size
                     else -> countsByType[type] ?: 0
                 }
-            val statusLabel = if (isMonitored) "monitored" else "not monitored"
-            val countCell = count?.toString() ?: "&mdash;"
+            val countCell = count?.toString() ?: "disabled"
             if (count != null) monitoredTotal += count
             sb
                 .append("    <tr><td>")
                 .append(htmlEscape(label))
-                .append("</td><td>")
-                .append(statusLabel)
                 .append("</td><td class=\"mono\">")
                 .append(countCell)
                 .appendLine("</td></tr>")
         }
         sb
-            .append("    <tr><td colspan=\"2\"><strong>Total</strong></td>")
+            .append("    <tr><td><strong>Total</strong></td>")
             .append("<td class=\"mono\"><strong>")
             .append(monitoredTotal)
             .appendLine("</strong></td></tr>")
