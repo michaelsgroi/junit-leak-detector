@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.salesforce.test</groupId>
+        <groupId>com.michaelsgroi.test</groupId>
         <artifactId>junit-leak-detector-it</artifactId>
         <version>0.1.0-SNAPSHOT</version>
     </parent>
@@ -21,7 +21,7 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.salesforce.test</groupId>
+            <groupId>com.michaelsgroi.test</groupId>
             <artifactId>junit-leak-detector</artifactId>
             <version>${leak-detector.version}</version>
             <scope>test</scope>

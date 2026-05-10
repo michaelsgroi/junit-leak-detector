@@ -1,0 +1,12 @@
+package com.michaelsgroi.test.extensions.resourceleak
+
+class SystemPropertyMonitor : DiscreteResourceMonitor {
+    override val resourceType = ResourceType.SYSTEM_PROPS
+
+    override fun snapshot(): Set<ResourceId> =
+        System
+            .getProperties()
+            .stringPropertyNames()
+            .map { ResourceId.PropertyId(it) }
+            .toSet()
+}

@@ -14,7 +14,7 @@ The component is split into three independent pieces (per the Architecture secti
 - **C2 — Second run (optional).** Drives the test runner a second time with a different Surefire `runOrder`; emits its own raw report.
 - **C3 — Attribution.** Independent post-processor. Consumes one or two raw reports; computes the candidate set per leak; emits the final human-readable leak report.
 
-All component code lives in package `com.salesforce.test.extensions.resourceleak`.
+All component code lives in package `com.michaelsgroi.test.extensions.resourceleak`.
 
 All timestamps use ISO8601 format.
 
@@ -52,7 +52,7 @@ Why a dedicated module rather than co-located with library tests: the scenario t
 
 ### Packaging and Distribution
 
-The Resource Leak Detector is maintained in its own standalone codebase, separate from any consuming project. It is published as a Maven artifact (e.g., `com.salesforce.test:resource-leak-detector:<version>`) and consumed as a `test`-scoped dependency.
+The Resource Leak Detector is maintained in its own standalone codebase, separate from any consuming project. It is published as a Maven artifact (e.g., `com.michaelsgroi.test:resource-leak-detector:<version>`) and consumed as a `test`-scoped dependency.
 
 Auto-registration with JUnit means consumers do not need to modify test code:
 
@@ -266,7 +266,7 @@ Invocation:
 
 ```
 java -cp <orchestrator-jar>:<attribution-jar>:<kotlin-stdlib-jar> \
-    com.salesforce.test.leakdetector.orchestrator.OrchestratorMain \
+    com.michaelsgroi.test.leakdetector.orchestrator.OrchestratorMain \
     --project-root <module-dir> [--runs 1|2] [--seed <long>] [--output-dir <dir>] \
     [--memory-threshold-mb <n>]
 ```
@@ -460,7 +460,7 @@ Network Port Leaks:
   - Port: 8080
     Detection Window: [2024-01-15T10:30:40.000Z, 2024-01-15T10:30:45.000Z]
     Candidate Set (1 class):
-      - com.salesforce.zos.TestClass1
+      - com.michaelsgroi.zos.TestClass1
         Started: 2024-01-15T10:30:40.000Z
         Ended:   2024-01-15T10:30:50.000Z
 
@@ -470,9 +470,9 @@ Thread Leaks:
     Stack Trace at First Snapshot:
       at java.lang.Thread.sleep(Native Method)
       at com.example.LeakyHelper.startBackgroundWorker(LeakyHelper.java:42)
-      at com.salesforce.zos.TestClass2.setup(TestClass2.kt:18)
+      at com.michaelsgroi.zos.TestClass2.setup(TestClass2.kt:18)
     Candidate Set (1 class):
-      - com.salesforce.zos.TestClass2
+      - com.michaelsgroi.zos.TestClass2
         Started: 2024-01-15T10:30:55.000Z
         Ended:   2024-01-15T10:31:05.000Z
 
@@ -482,7 +482,7 @@ Memory Leaks:
   - Increase: 64 MB
   - Threshold-cross window: [2024-01-15T10:31:25.000Z, 2024-01-15T10:31:30.123Z]
   - Candidate Set (1 class):
-    - com.salesforce.zos.TestClass5
+    - com.michaelsgroi.zos.TestClass5
       Started: 2024-01-15T10:31:25.000Z
       Ended:   2024-01-15T10:31:35.000Z
 ```

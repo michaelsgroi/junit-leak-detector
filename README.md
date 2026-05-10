@@ -12,7 +12,7 @@ Add as a `test`-scoped dependency in your project's `pom.xml`:
 
 ```xml
 <dependency>
-    <groupId>com.salesforce.test</groupId>
+    <groupId>com.michaelsgroi.test</groupId>
     <artifactId>junit-leak-detector</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <scope>test</scope>
@@ -148,7 +148,7 @@ mvn install
 
 `mvn install` is the supported full-build invocation. It runs unit tests under Surefire, then runs the integration scenarios under Failsafe (which shells out to `mvn test` against the basic and ddb subject modules with various profiles). `mvn verify` alone is insufficient because the scenarios module depends on sibling jars being installed in the local Maven repo.
 
-The library jar is published to the local Maven repo as `com.salesforce.test:junit-leak-detector:0.1.0-SNAPSHOT`.
+The library jar is published to the local Maven repo as `com.michaelsgroi.test:junit-leak-detector:0.1.0-SNAPSHOT`.
 
 ### Static checks
 

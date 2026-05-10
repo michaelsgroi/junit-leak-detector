@@ -13,8 +13,8 @@ set -euo pipefail
 VERSION="${JUNIT_LEAK_DETECTOR_VERSION:-0.1.0-SNAPSHOT}"
 M2="${M2_REPO:-${HOME}/.m2/repository}"
 
-orchestrator_jar="${M2}/com/salesforce/test/junit-leak-detector-orchestrator/${VERSION}/junit-leak-detector-orchestrator-${VERSION}.jar"
-attribution_jar="${M2}/com/salesforce/test/junit-leak-detector-attribution/${VERSION}/junit-leak-detector-attribution-${VERSION}.jar"
+orchestrator_jar="${M2}/com/michaelsgroi/test/junit-leak-detector-orchestrator/${VERSION}/junit-leak-detector-orchestrator-${VERSION}.jar"
+attribution_jar="${M2}/com/michaelsgroi/test/junit-leak-detector-attribution/${VERSION}/junit-leak-detector-attribution-${VERSION}.jar"
 
 if [[ ! -f "${orchestrator_jar}" ]]; then
   echo "Error: orchestrator jar not found at ${orchestrator_jar}" >&2
@@ -35,4 +35,4 @@ if [[ -z "${stdlib_jar}" ]]; then
 fi
 
 CP="${orchestrator_jar}:${attribution_jar}:${stdlib_jar}"
-exec java -cp "${CP}" com.salesforce.test.leakdetector.orchestrator.OrchestratorMain "$@"
+exec java -cp "${CP}" com.michaelsgroi.test.leakdetector.orchestrator.OrchestratorMain "$@"
