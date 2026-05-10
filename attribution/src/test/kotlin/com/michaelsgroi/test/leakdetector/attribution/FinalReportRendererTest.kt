@@ -100,7 +100,7 @@ class FinalReportRendererTest {
         val html = FinalReportRenderer.renderHtml(report)
         assertTrue(html.startsWith("<!DOCTYPE html>"))
         assertTrue(html.contains("<title>Resource Leak Detector Report</title>"))
-        assertTrue(html.contains("<h2>Network Port Leaks</h2>"))
+        assertTrue(html.contains("<h2 id=\"leaks-ports\">Network Port Leaks</h2>"))
         assertTrue(html.contains("8080"))
         assertTrue(html.contains("com.A"))
         assertTrue(html.endsWith("</html>\n"))
@@ -183,10 +183,10 @@ class FinalReportRendererTest {
         val html = FinalReportRenderer.renderHtml(report)
         assertTrue(html.contains("<h2>Summary</h2>"))
 
-        // Monitored types: count cell shows the actual leak count (including 0).
-        assertTrue(Regex("Network Port Leaks</td><td[^>]*>2</td>").containsMatchIn(html))
-        assertTrue(Regex("Thread Leaks</td><td[^>]*>1</td>").containsMatchIn(html))
-        assertTrue(Regex("Memory Leaks</td><td[^>]*>1</td>").containsMatchIn(html))
+        // Monitored types with leaks: label is anchor to its section, count cell shows actual count.
+        assertTrue(Regex("<a href=\"#leaks-ports\">Network Port Leaks</a></td><td[^>]*>2</td>").containsMatchIn(html))
+        assertTrue(Regex("<a href=\"#leaks-threads\">Thread Leaks</a></td><td[^>]*>1</td>").containsMatchIn(html))
+        assertTrue(Regex("<a href=\"#leaks-memory\">Memory Leaks</a></td><td[^>]*>1</td>").containsMatchIn(html))
 
         // Not-monitored types: count cell shows "disabled".
         assertTrue(Regex("System Property Leaks</td><td[^>]*>disabled</td>").containsMatchIn(html))
@@ -198,7 +198,7 @@ class FinalReportRendererTest {
 
         // Summary appears before the per-type sections.
         val summaryIdx = html.indexOf("<h2>Summary</h2>")
-        val firstTypeIdx = html.indexOf("<h2>Network Port Leaks</h2>")
+        val firstTypeIdx = html.indexOf("<h2 id=\"leaks-ports\">Network Port Leaks</h2>")
         assertTrue(summaryIdx in 0 until firstTypeIdx, "summary should appear before per-type sections")
     }
 

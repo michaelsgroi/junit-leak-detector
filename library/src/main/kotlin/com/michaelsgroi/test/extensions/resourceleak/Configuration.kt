@@ -50,7 +50,7 @@ class Configuration(
         get() = read("final.settle.enabled")?.toBooleanStrictOrNull() ?: true
 
     val finalSettleMaxSeconds: Long
-        get() = read("final.settle.max.seconds")?.toLong() ?: 10L
+        get() = read("final.settle.max.seconds")?.toLong() ?: 90L
 
     val finalSettlePollIntervalSeconds: Long
         get() = read("final.settle.poll.interval.seconds")?.toLong() ?: 1L

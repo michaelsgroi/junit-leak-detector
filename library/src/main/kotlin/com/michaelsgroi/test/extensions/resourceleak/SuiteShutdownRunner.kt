@@ -13,7 +13,7 @@ import java.util.concurrent.TimeoutException
  */
 class SuiteShutdownRunner(
     private val hookProvider: () -> Iterable<SuiteShutdownHook> = ::loadHooks,
-    private val perHookTimeoutSeconds: Long = 30L,
+    private val perHookTimeoutSeconds: Long = 10L,
 ) {
     fun runAll() {
         val hooks = hookProvider().toList()

@@ -76,7 +76,13 @@ object FinalReportRenderer {
 
         val byType = report.discreteLeaks.groupBy { it.resourceType }
         for ((type, leaks) in byType) {
-            sb.append("  <h2>").append(htmlEscape(headerFor(type).removeSuffix(":"))).appendLine("</h2>")
+            val heading = htmlEscape(headerFor(type).removeSuffix(":"))
+            sb
+                .append("  <h2 id=\"")
+                .append(sectionId(type))
+                .append("\">")
+                .append(heading)
+                .appendLine("</h2>")
             sb.appendLine("  <table>")
             sb
                 .append("    <tr><th>")
@@ -101,7 +107,7 @@ object FinalReportRenderer {
         }
 
         for (leak in report.memoryLeaks) {
-            sb.appendLine("  <h2>Memory Leaks</h2>")
+            sb.append("  <h2 id=\"").append(sectionId("memory")).appendLine("\">Memory Leaks</h2>")
             sb.appendLine("  <table>")
             sb.appendLine(
                 "    <tr><th>Baseline</th><th>Final</th><th>Increase</th>" +
@@ -169,9 +175,16 @@ object FinalReportRenderer {
                 }
             val countCell = count?.toString() ?: "disabled"
             if (count != null) monitoredTotal += count
+            val hasSection = count != null && count > 0
+            val labelCell =
+                if (hasSection) {
+                    "<a href=\"#${sectionId(type)}\">${htmlEscape(label)}</a>"
+                } else {
+                    htmlEscape(label)
+                }
             sb
                 .append("    <tr><td>")
-                .append(htmlEscape(label))
+                .append(labelCell)
                 .append("</td><td class=\"mono\">")
                 .append(countCell)
                 .appendLine("</td></tr>")
@@ -221,6 +234,8 @@ object FinalReportRenderer {
         }
         return sb.toString()
     }
+
+    private fun sectionId(type: String): String = "leaks-$type"
 
     private fun headerFor(type: String): String =
         when (type) {
