@@ -1,6 +1,7 @@
 package com.salesforce.test.extensions.resourceleak
 
 import org.slf4j.LoggerFactory
+import org.springframework.context.ConfigurableApplicationContext
 
 /**
  * Default suite-shutdown hook for Spring TestContext-based suites.
@@ -43,9 +44,10 @@ class SpringContextShutdownHook : SuiteShutdownHook {
  * Real-Spring-typed worker. Kept in a separate object so [SpringContextShutdownHook]
  * can probe for Spring's presence before the JVM links any of these references.
  *
- * `DefaultCacheAwareContextLoaderDelegate.defaultContextCache` is package-private,
- * so we have to read it reflectively. But once we have a `ContextCache` reference,
- * we use the real Spring API to enumerate and close.
+ * `ContextCache.clear()` empties the cache map but does NOT close the underlying
+ * `ApplicationContext`s — their threads keep running. We reach in to the
+ * `DefaultContextCache.contextMap` (package-private) and call `close()` on each
+ * `ConfigurableApplicationContext` ourselves before clearing.
  */
 private object SpringDelegate {
     private val log = LoggerFactory.getLogger(SpringContextShutdownHook::class.java)
@@ -53,21 +55,32 @@ private object SpringDelegate {
     fun shutdownAll() {
         val cache = readDefaultCache() ?: return
 
-        val sizeBefore = cache.size()
-        if (sizeBefore == 0) {
+        val contexts = readContexts(cache)
+        if (contexts.isEmpty()) {
             log.debug("SpringContextShutdownHook: cache is empty; nothing to close")
             return
         }
 
-        log.info("SpringContextShutdownHook: closing {} cached Spring context(s)", sizeBefore)
+        log.info("SpringContextShutdownHook: closing {} cached Spring context(s)", contexts.size)
         val started = System.currentTimeMillis()
+        var closed = 0
+        for (ctx in contexts) {
+            try {
+                if (ctx.isActive) {
+                    ctx.close()
+                    closed++
+                }
+            } catch (e: Exception) {
+                log.warn("SpringContextShutdownHook: close() threw on {}: {}", ctx.javaClass.name, e.message)
+            }
+        }
         try {
             cache.clear()
         } catch (e: Exception) {
-            log.warn("SpringContextShutdownHook: cache.clear() threw: {}", e.cause?.message ?: e.message)
+            log.warn("SpringContextShutdownHook: cache.clear() threw: {}", e.message)
         }
         val elapsedMs = System.currentTimeMillis() - started
-        log.info("SpringContextShutdownHook: closed {} context(s) in {}ms", sizeBefore - cache.size(), elapsedMs)
+        log.info("SpringContextShutdownHook: closed {} context(s) in {}ms", closed, elapsedMs)
     }
 
     private fun readDefaultCache(): org.springframework.test.context.cache.ContextCache? {
@@ -81,5 +94,22 @@ private object SpringDelegate {
             }
         field.isAccessible = true
         return field.get(null) as? org.springframework.test.context.cache.ContextCache
+    }
+
+    private fun readContexts(cache: org.springframework.test.context.cache.ContextCache): List<ConfigurableApplicationContext> {
+        val field =
+            try {
+                cache.javaClass.getDeclaredField("contextMap")
+            } catch (e: NoSuchFieldException) {
+                log.warn("SpringContextShutdownHook: contextMap field not found on {}", cache.javaClass.name)
+                return emptyList()
+            }
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val map = field.get(cache) as? Map<Any, Any> ?: return emptyList()
+        // Snapshot under the cache's monitor so we don't iterate a concurrently-modified map.
+        synchronized(map) {
+            return map.values.filterIsInstance<ConfigurableApplicationContext>().toList()
+        }
     }
 }
