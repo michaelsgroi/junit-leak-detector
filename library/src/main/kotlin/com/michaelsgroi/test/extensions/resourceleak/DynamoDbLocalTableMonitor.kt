@@ -23,10 +23,13 @@ class DynamoDbLocalTableMonitor(
 
     override fun snapshot(): Set<ResourceId> =
         try {
+            // listTables() returns up to 100 tables per page; paginate to capture all.
             client
-                .listTables()
+                .listTablesPaginator()
                 .tableNames()
+                .stream()
                 .map { ResourceId.DynamoDbTableId(it) }
+                .toList()
                 .toSet()
         } catch (e: Exception) {
             log.debug("Failed to gather DynamoDB Local table resources", e)
