@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Wrapper script for the junit-leak-detector orchestrator.
+#
+# Locates the orchestrator jar (and its compile-time dependencies) under
+# ~/.m2/repository, builds the runtime classpath, and invokes OrchestratorMain.
+# Pass through all arguments unchanged.
+#
+# Requires: a populated local Maven repo (run `mvn install` from the repo root
+# at least once), and `mvn` on PATH.
+
+set -euo pipefail
+
+VERSION="${JUNIT_LEAK_DETECTOR_VERSION:-0.1.0-SNAPSHOT}"
+M2="${M2_REPO:-${HOME}/.m2/repository}"
+
+orchestrator_jar="${M2}/com/michaelsgroi/test/junit-leak-detector-orchestrator/${VERSION}/junit-leak-detector-orchestrator-${VERSION}.jar"
+attribution_jar="${M2}/com/michaelsgroi/test/junit-leak-detector-attribution/${VERSION}/junit-leak-detector-attribution-${VERSION}.jar"
+
+if [[ ! -f "${orchestrator_jar}" ]]; then
+  echo "Error: orchestrator jar not found at ${orchestrator_jar}" >&2
+  echo "Run 'mvn install' from the junit-leak-detector repo root first." >&2
+  exit 1
+fi
+if [[ ! -f "${attribution_jar}" ]]; then
+  echo "Error: attribution jar not found at ${attribution_jar}" >&2
+  exit 1
+fi
+
+# Resolve kotlin-stdlib from the local Maven repo. Pick whichever version is present.
+stdlib_jar="$(find "${M2}/org/jetbrains/kotlin/kotlin-stdlib" -maxdepth 2 -name 'kotlin-stdlib-*.jar' \
+  ! -name '*-sources.jar' ! -name '*-javadoc.jar' 2>/dev/null | head -n 1)"
+if [[ -z "${stdlib_jar}" ]]; then
+  echo "Error: kotlin-stdlib not found in ${M2}" >&2
+  exit 1
+fi
+
+CP="${orchestrator_jar}:${attribution_jar}:${stdlib_jar}"
+exec java -cp "${CP}" com.michaelsgroi.test.leakdetector.orchestrator.OrchestratorMain "$@"

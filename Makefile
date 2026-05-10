@@ -1,23 +1,31 @@
 SHELL := /bin/bash
 
-.PHONY: all build test test-it clean
+.PHONY: all test install checks spotless-check cpd-check clean
 
+# Default target: build + run unit and scenario tests + install to local Maven repo.
 all: test
 
-# Build the library, run library unit tests, install to local Maven repo,
-# then run all integration tests.
-test: build test-it
+# Full build with all tests (Surefire + Failsafe scenarios).
+test:
+	mvn install
 
-build:
-	@echo "==> Building junit-leak-detector library and installing to local Maven repo..."
-	mvn -q clean install
+# Install to local Maven repo without running tests. Useful when you just want
+# to consume the built jars from another project (e.g., to run the inline
+# detector or the orchestrator against a different repo).
+install:
+	mvn install -DskipTests
 
-# Run both integration-test modules. Each module's Makefile asserts specific scenarios
-# (report-only, build-failure, fail-fast) via Maven profiles.
-test-it:
-	@$(MAKE) -C integration-tests/basic test
-	@$(MAKE) -C integration-tests/ddb test
+# On-demand static checks (also wired to run automatically at process-sources
+# during mvn test/install).
+checks: spotless-check cpd-check
+
+spotless-check:
+	@echo "==> Spotless check (ktlint)..."
+	mvn -o spotless:check
+
+cpd-check:
+	@echo "==> CPD check (copy-paste detection)..."
+	mvn -o pmd:cpd-check
 
 clean:
 	mvn clean
-	mvn -f integration-tests/pom.xml clean

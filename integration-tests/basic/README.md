@@ -26,11 +26,11 @@ Resource Leak Detector Report
 Test Classes Executed: 5
 
 Test Class Execution Times:
-  - com.salesforce.test.extensions.resourceleak.EnvironmentVariableLeakingTest: 10ms
-  - com.salesforce.test.extensions.resourceleak.PortLeakingTest: 7ms
-  - com.salesforce.test.extensions.resourceleak.ThreadLeakingTest: 0ms
-  - com.salesforce.test.extensions.resourceleak.MemoryLeakingTest: 3ms
-  - com.salesforce.test.extensions.resourceleak.SystemPropertyLeakingTest: 0ms
+  - com.michaelsgroi.test.extensions.resourceleak.EnvironmentVariableLeakingTest: 10ms
+  - com.michaelsgroi.test.extensions.resourceleak.PortLeakingTest: 7ms
+  - com.michaelsgroi.test.extensions.resourceleak.ThreadLeakingTest: 0ms
+  - com.michaelsgroi.test.extensions.resourceleak.MemoryLeakingTest: 3ms
+  - com.michaelsgroi.test.extensions.resourceleak.SystemPropertyLeakingTest: 0ms
 
 System Property Leaks:
   - Property: leaked.by.SystemPropertyLeakingTest

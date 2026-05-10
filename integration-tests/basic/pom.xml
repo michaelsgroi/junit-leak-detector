@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.salesforce.test</groupId>
+        <groupId>com.michaelsgroi.test</groupId>
         <artifactId>junit-leak-detector-it</artifactId>
         <version>0.1.0-SNAPSHOT</version>
     </parent>
@@ -21,7 +21,7 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.salesforce.test</groupId>
+            <groupId>com.michaelsgroi.test</groupId>
             <artifactId>junit-leak-detector</artifactId>
             <version>${leak-detector.version}</version>
             <scope>test</scope>
@@ -42,12 +42,6 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
             <version>${slf4j.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>uk.org.webcompere</groupId>
-            <artifactId>system-stubs-jupiter</artifactId>
-            <version>2.1.7</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -104,6 +98,27 @@
                             <systemPropertyVariables>
                                 <resource.leak.detector.build.failure.resource.types>memory</resource.leak.detector.build.failure.resource.types>
                             </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <!--
+                Multi-fork scenario: configure Surefire to use multiple non-reused JVMs.
+                Run: mvn test -Pmulti-fork
+                Expected: BUILD SUCCESS; the runtime fork-detector logs a WARN about
+                "Multiple forks detected" because forkCount=2 with reuseForks=false means
+                each test class gets its own JVM, defeating cross-class leak detection.
+            -->
+            <id>multi-fork</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <forkCount>2</forkCount>
+                            <reuseForks>false</reuseForks>
                         </configuration>
                     </plugin>
                 </plugins>

@@ -25,7 +25,7 @@ Resource Leak Detector Report
 Test Classes Executed: 1
 
 Test Class Execution Times:
-  - com.salesforce.test.extensions.resourceleak.DynamoDbTableLeakingTest: 1191ms
+  - com.michaelsgroi.test.extensions.resourceleak.DynamoDbTableLeakingTest: 1191ms
 
 DynamoDB Table Leaks:
   - Table: leaked-by-DynamoDbTableLeakingTest
