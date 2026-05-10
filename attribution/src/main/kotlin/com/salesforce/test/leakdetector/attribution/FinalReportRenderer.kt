@@ -69,6 +69,7 @@ object FinalReportRenderer {
         sb.appendLine("<body>")
         sb.appendLine("  <h1>Resource Leak Detector Report</h1>")
 
+        renderSummary(sb, report)
         if (report.discreteLeaks.isEmpty() && report.memoryLeaks.isEmpty()) {
             sb.appendLine("  <p class=\"none\">No leaks detected.</p>")
         }
@@ -146,6 +147,46 @@ object FinalReportRenderer {
         }
     }
 
+    private fun renderSummary(
+        sb: StringBuilder,
+        report: FinalReport,
+    ) {
+        val monitored = report.monitoredTypes.toSet()
+        val countsByType = report.discreteLeaks.groupingBy { it.resourceType }.eachCount()
+
+        sb.appendLine("  <h2>Summary</h2>")
+        sb.appendLine("  <table>")
+        sb.appendLine("    <tr><th>Leak Type</th><th>Status</th><th>Count</th></tr>")
+        var monitoredTotal = 0
+        for (type in ALL_RESOURCE_TYPES) {
+            val label = headerFor(type).removeSuffix(":")
+            val isMonitored = type in monitored
+            val count =
+                when {
+                    !isMonitored -> null
+                    type == "memory" -> report.memoryLeaks.size
+                    else -> countsByType[type] ?: 0
+                }
+            val statusLabel = if (isMonitored) "monitored" else "not monitored"
+            val countCell = count?.toString() ?: "&mdash;"
+            if (count != null) monitoredTotal += count
+            sb
+                .append("    <tr><td>")
+                .append(htmlEscape(label))
+                .append("</td><td>")
+                .append(statusLabel)
+                .append("</td><td class=\"mono\">")
+                .append(countCell)
+                .appendLine("</td></tr>")
+        }
+        sb
+            .append("    <tr><td colspan=\"2\"><strong>Total</strong></td>")
+            .append("<td class=\"mono\"><strong>")
+            .append(monitoredTotal)
+            .appendLine("</strong></td></tr>")
+        sb.appendLine("  </table>")
+    }
+
     private fun renderCandidatesHtml(
         candidates: List<CandidateClass>,
         defect: Boolean,
@@ -191,6 +232,7 @@ object FinalReportRenderer {
             "systemprops" -> "System Property Leaks:"
             "envvars" -> "Environment Variable Leaks:"
             "ddbtables" -> "DynamoDB Table Leaks:"
+            "memory" -> "Memory Leaks:"
             else -> "$type Leaks:"
         }
 
@@ -205,4 +247,9 @@ object FinalReportRenderer {
         }
 
     private const val BYTES_PER_MB = 1_048_576L
+
+    // The full set of resource types the detector knows about, in display order.
+    // Used by the Summary table to show every type even when it had no findings or
+    // wasn't monitored.
+    private val ALL_RESOURCE_TYPES = listOf("ports", "threads", "systemprops", "envvars", "ddbtables", "memory")
 }

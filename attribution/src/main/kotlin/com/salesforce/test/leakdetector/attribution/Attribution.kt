@@ -35,6 +35,8 @@ data class MemoryLeak(
 data class FinalReport(
     val discreteLeaks: List<DiscreteLeak>,
     val memoryLeaks: List<MemoryLeak>,
+    /** Resource types that were monitored during the run (e.g., "ports", "threads"). */
+    val monitoredTypes: List<String> = emptyList(),
 )
 
 object Attribution {
@@ -52,7 +54,7 @@ object Attribution {
 
         val discrete = computeDiscreteLeaks(report.snapshots, baseline, final, lifecycles)
         val memory = computeMemoryLeaks(report.snapshots, baseline, final, lifecycles, memoryGrowthThresholdBytes)
-        return FinalReport(discrete, memory)
+        return FinalReport(discrete, memory, monitoredTypes = report.header.monitors)
     }
 
     fun intersectAcrossRuns(
@@ -61,7 +63,11 @@ object Attribution {
     ): FinalReport {
         val discrete = intersectDiscrete(run1.discreteLeaks, run2.discreteLeaks)
         val memory = intersectMemory(run1.memoryLeaks, run2.memoryLeaks)
-        return FinalReport(discrete, memory)
+        // Union the monitored types: a type counts as "monitored in this investigation"
+        // if either run was monitoring it. In practice the orchestrator drives both runs
+        // with the same config, so the union and intersection match.
+        val monitored = (run1.monitoredTypes + run2.monitoredTypes).distinct()
+        return FinalReport(discrete, memory, monitoredTypes = monitored)
     }
 
     private fun computeDiscreteLeaks(

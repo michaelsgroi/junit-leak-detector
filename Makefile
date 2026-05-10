@@ -1,14 +1,19 @@
 SHELL := /bin/bash
 
-.PHONY: all test checks spotless-check cpd-check clean
+.PHONY: all test install checks spotless-check cpd-check clean
 
-# Default target: run unit tests + integration scenario tests via mvn verify.
-# Library scenario IT tests (failsafe) shell out to mvn against integration-tests/* modules,
-# which must be installed to the local Maven repo first.
+# Default target: build + run unit and scenario tests + install to local Maven repo.
 all: test
 
+# Full build with all tests (Surefire + Failsafe scenarios).
 test:
 	mvn install
+
+# Install to local Maven repo without running tests. Useful when you just want
+# to consume the built jars from another project (e.g., to run the inline
+# detector or the orchestrator against a different repo).
+install:
+	mvn install -DskipTests
 
 # On-demand static checks (also wired to run automatically at process-sources
 # during mvn test/install).
