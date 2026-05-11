@@ -14,7 +14,6 @@ import org.junit.platform.engine.support.descriptor.AbstractTestDescriptor
 import org.junit.platform.engine.support.descriptor.ClassSource
 import org.junit.platform.engine.support.descriptor.MethodSource
 import org.junit.platform.launcher.TestIdentifier
-import java.util.Properties
 
 /**
  * Verifies the [ResourceLeakMonitor]'s mapping from JUnit Platform `TestIdentifier`
@@ -255,8 +254,8 @@ class ResourceLeakMonitorListenerEventsTest {
         state: ResourceState,
         granularity: String,
     ): ResourceLeakMonitor {
-        val props = Properties().apply { setProperty("snapshot.granularity", granularity) }
-        val configuration = Configuration(propertiesLoader = { props }, systemPropertyLookup = { null })
+        val sys = mapOf("resource.leak.detector.snapshot.granularity" to granularity)
+        val configuration = Configuration(systemPropertyLookup = { sys[it] })
         return ResourceLeakMonitor(
             resourceState = state,
             clock = clock,

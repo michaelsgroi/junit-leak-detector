@@ -33,7 +33,16 @@ class ResourceLeakMonitor(
     private var currentClassBeforeAllProbe: Map<ResourceType, Set<ResourceId>>? = null
     private var currentClassBeforeAllMemory: Long? = null
 
+    private var disabled: Boolean = false
+
     override fun testPlanExecutionStarted(testPlan: TestPlan) {
+        // Master kill switch: short-circuit before any side-effects (no fork marker,
+        // no report directory, no monitors). Allows consumers to keep the dep on the
+        // classpath but turn the detector off entirely.
+        if (configuration.disabled) {
+            disabled = true
+            return
+        }
         try {
             val startedAt = clock.instant()
             val paths =
@@ -67,6 +76,7 @@ class ResourceLeakMonitor(
     }
 
     override fun executionStarted(testIdentifier: TestIdentifier) {
+        if (disabled) return
         classNameOf(testIdentifier)?.let { onClassStart(it) }
         methodKeyOf(testIdentifier)?.let { onMethodStart(it) }
     }
@@ -75,6 +85,7 @@ class ResourceLeakMonitor(
         testIdentifier: TestIdentifier,
         testExecutionResult: TestExecutionResult,
     ) {
+        if (disabled) return
         // Tear-down order mirrors construction order: per-method first (it's nested inside per-class).
         methodKeyOf(testIdentifier)?.let { onMethodEnd(it) }
         classNameOf(testIdentifier)?.let { onClassEnd(it) }
@@ -168,6 +179,7 @@ class ResourceLeakMonitor(
     }
 
     override fun testPlanExecutionFinished(testPlan: TestPlan) {
+        if (disabled) return
         val r = registry
 
         // Run suite-shared shutdown hooks (e.g., SpringContextShutdownHook) so threads
