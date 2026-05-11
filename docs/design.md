@@ -342,7 +342,6 @@ monitored.resource.types=ports,threads,memory
 memory.growth.threshold.mb=50
 
 # Build failure
-build.failure.enabled=false
 build.failure.resource.types=
 
 snapshot.granularity=class   # class = BeforeAll/AfterAll only; test = also BeforeEach/AfterEach
@@ -357,8 +356,7 @@ preclass.settle.poll.interval.seconds=1
 |---|---|---|
 | `monitored.resource.types` | (empty) | Comma-separated. Valid: `ports`, `threads`, `systemprops`, `envvars`, `memory`, `ddbtables`. |
 | `memory.growth.threshold.mb` | `50` | Per-class heap growth threshold. |
-| `build.failure.enabled` | `false` | Master switch for build failure on detected leaks. |
-| `build.failure.resource.types` | (empty) | Comma-separated list of resource types whose leaks fail the build. |
+| `build.failure.resource.types` | (empty) | Comma-separated list of resource types whose leaks fail the build. Empty = build never fails. |
 | `snapshot.granularity` | `class` | `class` = snapshots at `BeforeAllCallback`/`AfterAllCallback` only. `test` = also at `BeforeEachCallback`/`AfterEachCallback` for fine-grained debugging at the cost of ~Nx more snapshot operations. |
 | `preclass.settle.enabled` | `false` | When `true`, the extension waits for threads/ports that appeared during the previous class to clear before snapshotting at the next class's `BeforeAll`. |
 | `preclass.settle.max.seconds` | `10` | Maximum total time to wait for carry-over resources to clear. |
