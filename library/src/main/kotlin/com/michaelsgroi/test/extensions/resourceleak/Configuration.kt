@@ -53,6 +53,16 @@ class Configuration(
     val finalSettlePollIntervalSeconds: Long
         get() = read("final.settle.poll.interval.seconds")?.toLong() ?: 1L
 
+    /** When `true`, the listener starts a JFR recording capturing `jdk.ThreadStart`
+     *  events so attribution can show each leaked thread's creation stack. Silently
+     *  no-ops on JDKs without `jdk.jfr`. */
+    val threadCreationTrackingEnabled: Boolean
+        get() = read("thread.creation.tracking.enabled")?.toBooleanStrictOrNull() ?: true
+
+    /** Stack-frame depth captured per `jdk.ThreadStart` event. */
+    val threadCreationStackDepth: Int
+        get() = read("thread.creation.stack.depth")?.toInt() ?: 30
+
     /**
      * Comma-separated list of system property names to exclude from leak detection. Useful for
      * framework globals that are set once during init (Spring Boot's `PID`, `APPLICATION_NAME`,

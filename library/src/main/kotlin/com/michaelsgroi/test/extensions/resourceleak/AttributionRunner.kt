@@ -4,6 +4,7 @@ import com.michaelsgroi.test.leakdetector.attribution.Attribution
 import com.michaelsgroi.test.leakdetector.attribution.FinalReport
 import com.michaelsgroi.test.leakdetector.attribution.FinalReportRenderer
 import com.michaelsgroi.test.leakdetector.attribution.RawReportReader
+import com.michaelsgroi.test.leakdetector.attribution.ThreadCreationIndex
 import org.slf4j.LoggerFactory
 import kotlin.system.exitProcess
 
@@ -21,7 +22,16 @@ class AttributionRunner(
 
         val rawReport = RawReportReader.read(rawReportFile)
         val thresholdBytes = configuration.memoryGrowthThresholdMb * BYTES_PER_MB
-        val finalReport = Attribution.attributeSingleRun(rawReport, memoryGrowthThresholdBytes = thresholdBytes)
+        // If the runtime captured a thread-creation JFR file alongside the raw report,
+        // parse it so each thread leak gets its creation stack attached. Missing or
+        // unreadable files yield ThreadCreationIndex.EMPTY (silent fallback).
+        val threadCreations = ThreadCreationIndex.parse(reportPaths.threadCreations)
+        val finalReport =
+            Attribution.attributeSingleRun(
+                report = rawReport,
+                memoryGrowthThresholdBytes = thresholdBytes,
+                threadCreationIndex = threadCreations,
+            )
 
         // Log a plain-text version of the report to the console; write the HTML
         // version to disk for the user to open in a browser.

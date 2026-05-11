@@ -26,6 +26,7 @@ class ResourceLeakMonitor(
     private var registry: MonitorRegistry? = null
     private var rawReportWriter: RawReportWriter? = null
     private var reportPaths: ReportPaths? = null
+    private var threadCreationRecorder: ThreadCreationRecorder? = null
     private val log = LoggerFactory.getLogger(javaClass)
 
     // Settle-wait state, scoped to one suite run (single listener instance per test plan).
@@ -67,6 +68,18 @@ class ResourceLeakMonitor(
                 snapshotGranularity = configuration.snapshotGranularity,
             )
             r.captureBaseline()
+            // Start JFR recording for thread-creation tracking. Must be after baseline so
+            // the recording captures threads spawned during test execution rather than
+            // baseline-time JVM internals.
+            if (configuration.threadCreationTrackingEnabled) {
+                ThreadCreationRecorder(
+                    outputFile = paths.threadCreations,
+                    stackDepth = configuration.threadCreationStackDepth,
+                ).also {
+                    it.start()
+                    threadCreationRecorder = it
+                }
+            }
         } catch (e: IllegalStateException) {
             // JUnit Platform swallows exceptions from this method, so we exit
             // explicitly to ensure a fatal startup error fails the build.
@@ -202,6 +215,9 @@ class ResourceLeakMonitor(
         }
 
         registry?.snapshotAll(kind = SnapshotKind.FINAL)
+        // Stop JFR after FINAL snapshot so the recording captures every thread created
+        // during the test plan up to (and including) leaks visible in the snapshot.
+        threadCreationRecorder?.stopAndDump()
         rawReportWriter?.closeWith(
             finishedAt = clock.instant(),
             lifecycles = resourceState.getAllTestClassLifecycles(),

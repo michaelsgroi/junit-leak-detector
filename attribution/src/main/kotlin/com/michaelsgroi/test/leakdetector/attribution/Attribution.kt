@@ -20,6 +20,10 @@ data class DiscreteLeak(
     val detectionWindow: DetectionWindow,
     val candidateSet: List<CandidateClass>,
     val emptyCandidateSetDefect: Boolean,
+    /** Stack frames at thread *creation* (`jdk.ThreadStart` event), populated when
+     *  attribution was given a paired JFR file and this leak is a thread leak with
+     *  a matching event. Topmost frame is the call site that created the thread. */
+    val creationStack: List<String>? = null,
 )
 
 data class MemoryLeak(
@@ -45,6 +49,7 @@ object Attribution {
     fun attributeSingleRun(
         report: RawReport,
         memoryGrowthThresholdBytes: Long = 0L,
+        threadCreationIndex: ThreadCreationIndex = ThreadCreationIndex.EMPTY,
     ): FinalReport {
         val baseline =
             report.snapshots.firstOrNull { it.kind == "BASELINE" }
@@ -54,7 +59,7 @@ object Attribution {
                 ?: error("Raw report has no FINAL snapshot")
         val lifecycles = report.footer.lifecycles
 
-        val discrete = computeDiscreteLeaks(report.snapshots, baseline, final, lifecycles)
+        val discrete = computeDiscreteLeaks(report.snapshots, baseline, final, lifecycles, threadCreationIndex)
         val memory = computePerClassMemoryLeaks(report.snapshots, lifecycles, memoryGrowthThresholdBytes)
         return FinalReport(discrete, memory, monitoredTypes = report.header.monitors)
     }
@@ -64,6 +69,7 @@ object Attribution {
         baseline: RawSnapshot,
         final: RawSnapshot,
         lifecycles: List<TestClassLifecycleRecord>,
+        threadCreationIndex: ThreadCreationIndex,
     ): List<DiscreteLeak> {
         val results = mutableListOf<DiscreteLeak>()
         val resourceTypes = baseline.discrete.keys + final.discrete.keys
@@ -82,11 +88,27 @@ object Attribution {
                         detectionWindow = window,
                         candidateSet = candidates,
                         emptyCandidateSetDefect = candidates.isEmpty(),
+                        creationStack = creationStackFor(resource, threadCreationIndex),
                     )
             }
         }
         return results
     }
+
+    /** For thread leaks, look up the creation stack from the JFR-derived index. */
+    private fun creationStackFor(
+        resource: DiscreteResource,
+        index: ThreadCreationIndex,
+    ): List<String>? =
+        when (resource) {
+            is DiscreteResource.ThreadResource -> {
+                resource.id.toLongOrNull()?.let { index.lookup(resource.name, it) }
+            }
+
+            else -> {
+                null
+            }
+        }
 
     /**
      * Per-class memory attribution: for each test class, find its BEFORE_ALL and AFTER_ALL

@@ -19,6 +19,7 @@ data class ReportPaths(
 ) {
     val rawReport: File get() = File(outputDir, "raw-report-$timestamp.json")
     val leakSummary: File get() = File(outputDir, "leak-summary-$timestamp.html")
+    val threadCreations: File get() = File(outputDir, "thread-creations-$timestamp.jfr")
 
     fun rawReportForRun(runNumber: Int): File = File(outputDir, "raw-report-$runNumber-$timestamp.json")
 

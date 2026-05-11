@@ -23,6 +23,12 @@ object FinalReportRenderer {
                     .append(leak.detectionWindow.firstPresent)
                     .appendLine("]")
                 renderCandidatesText(sb, leak.candidateSet, leak.emptyCandidateSetDefect)
+                leak.creationStack?.takeIf { it.isNotEmpty() }?.let { stack ->
+                    sb.appendLine("    Created at:")
+                    for (frame in stack) {
+                        sb.append("      at ").appendLine(frame)
+                    }
+                }
             }
         }
 
@@ -66,6 +72,9 @@ object FinalReportRenderer {
         sb.appendLine("    .none { color: #2a7; font-style: italic; }")
         sb.appendLine("    .leak-row td { white-space: nowrap; }")
         sb.appendLine("    .leak-row td.candidates { white-space: normal; }")
+        sb.appendLine("    .creation-stack { margin-top: 0.4em; }")
+        sb.appendLine("    .creation-stack pre { background: #f8f8f8; padding: 0.4em 0.7em; margin: 0.3em 0 0 0; overflow-x: auto; }")
+        sb.appendLine("    .creation-stack summary { cursor: pointer; color: #555; font-size: 0.85em; }")
         sb.appendLine("  </style>")
         sb.appendLine("</head>")
         sb.appendLine("<body>")
@@ -102,6 +111,7 @@ object FinalReportRenderer {
                 sb
                     .append("      <td class=\"candidates\">")
                     .append(renderCandidatesHtml(leak.candidateSet, leak.emptyCandidateSetDefect))
+                    .append(renderCreationStackHtml(leak.creationStack))
                     .appendLine("</td>")
                 sb.appendLine("    </tr>")
             }
@@ -216,6 +226,22 @@ object FinalReportRenderer {
                 .append(")</small></li>")
         }
         sb.append("</ul>")
+        return sb.toString()
+    }
+
+    /**
+     * Renders the thread-creation stack inside a collapsible `<details>` block. Hidden
+     * by default to keep the report scannable; clicking expands to show the call site
+     * that started the thread (from JFR's `jdk.ThreadStart` event).
+     */
+    private fun renderCreationStackHtml(stack: List<String>?): String {
+        if (stack.isNullOrEmpty()) return ""
+        val sb = StringBuilder()
+        sb.append("<details class=\"creation-stack\"><summary>Creation stack</summary><pre class=\"mono\">")
+        for (frame in stack) {
+            sb.append(htmlEscape(frame)).append('\n')
+        }
+        sb.append("</pre></details>")
         return sb.toString()
     }
 
