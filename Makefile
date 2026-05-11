@@ -11,7 +11,7 @@ test:
 
 # Install to local Maven repo without running tests. Useful when you just want
 # to consume the built jars from another project (e.g., to run the inline
-# detector or the orchestrator against a different repo).
+# detector against a different repo).
 install:
 	mvn install -DskipTests
 

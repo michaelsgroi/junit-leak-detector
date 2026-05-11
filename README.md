@@ -44,51 +44,16 @@ After `mvn test`, two files land in the configured output directory (default: th
 
 Both files share the same ISO-8601-seconds timestamp suffix so prior runs aren't overwritten. The library does not auto-open the HTML — running tests shouldn't open browser tabs as a side effect.
 
-## Investigation mode (orchestrator)
-
-When inline mode reports a leak with a wide candidate set (multiple test classes implicated), use the orchestrator to narrow attribution. The orchestrator runs the suite twice with different test orderings (alphabetical, then random) and intersects the candidate sets — leaks attributed to the same test class in both runs collapse to that single class.
-
-The orchestrator is an investigation/isolation tool. It does **not** impose its own build-failure decision and does **not** propagate sub-process exit codes; it always exits 0 on a clean orchestration regardless of test-suite outcomes. (Build-failure-on-leak is inline mode's job during regular `mvn test`.)
-
-Run it (after `mvn install`):
-
-```
-orchestrator/bin/junit-leak-detector-orchestrator \
-    --project-root /path/to/your/maven/module \
-    --runs 2 \
-    --memory-threshold-mb 100
-```
-
-Outputs land in `--output-dir` (default: the project root). All three files share the same ISO-8601 timestamp suffix:
-
-- `raw-report-1-<ts>.json` — alphabetical run
-- `raw-report-2-<ts>.json` — random run (with recorded seed)
-- `leak-summary-<ts>.html` — final intersected leak summary; opened automatically in the default browser
-
-Set `JUNIT_LEAK_DETECTOR_NO_OPEN=1` in the environment to suppress auto-opening (useful in CI).
-
-Flags:
-
-| Flag | Description | Default |
-|---|---|---|
-| `--project-root <dir>` | Required. The Maven module to invoke. | — |
-| `--runs <1\|2>` | Number of runs. `1` = run once, no intersection. `2` = full investigation mode. | `2` |
-| `--seed <long>` | Seed for run 2's random order. Recorded so the run is reproducible. | current time millis |
-| `--output-dir <dir>` | Where to put the three output files. | the project root |
-| `--memory-threshold-mb <n>` | Memory growth threshold in MB. | `0` |
-
-The orchestrator forces these Surefire flags via `-D` properties on each `mvn test` invocation, overriding the consuming project's pom: `forkCount=1`, `reuseForks=true`, `junit.jupiter.extensions.autodetection.enabled=true`, `surefire.runOrder` (alphabetical/random), `surefire.runOrder.random.seed`, plus an empty `resource.leak.detector.build.failure.resource.types` to suppress the library's per-run build-failure trigger so run 1 cannot short-circuit run 2.
-
 ## Standalone attribution CLI
 
-If you have a saved raw report and want to re-run attribution (or do a manual two-report intersection):
+If you have a saved raw report and want to re-run attribution:
 
 ```
 attribution/bin/junit-leak-detector-attribution \
-    raw-report-1.json [raw-report-2.json] [--memory-threshold-mb N]
+    raw-report.json [--memory-threshold-mb N]
 ```
 
-Writes `leak-summary-<ISO-timestamp>.html` next to the input raw report and opens it in the default browser. With one raw report, produces the single-run attributed summary. With two, intersects across runs. Set `JUNIT_LEAK_DETECTOR_NO_OPEN=1` to suppress auto-opening.
+Writes `leak-summary-<ISO-timestamp>.html` next to the input raw report and opens it in the default browser. Set `JUNIT_LEAK_DETECTOR_NO_OPEN=1` to suppress auto-opening.
 
 ## Configuration
 
@@ -101,7 +66,7 @@ Library configuration is layered:
 | Property | What it controls | Default |
 |---|---|---|
 | `monitored.resource.types` | Comma-separated list of monitors to enable. Valid values: `ports`, `threads`, `systemprops`, `envvars`, `memory`, `ddbtables`. Empty = nothing monitored. | (empty) |
-| `memory.growth.threshold.mb` | Minimum heap growth (final − baseline, in MB) before flagging a memory leak | `1024` |
+| `memory.growth.threshold.mb` | Per-class heap growth (AFTER_ALL − BEFORE_ALL, in MB) before flagging a memory leak | `50` |
 | `build.failure.resource.types` | Comma-separated list of resource types whose leaks should fail the build (calls `System.exit(1)`). Empty = report only. | (empty) |
 | `snapshot.granularity` | `class` snapshots at `BeforeAll`/`AfterAll` only. `test` also snapshots at `BeforeEach`/`AfterEach` for fine-grained debugging at ~Nx more snapshot operations. | `class` |
 | `report.output.dir` | Directory where `raw-report-<ts>.json` and `leak-summary-<ts>.html` are written. | the JVM's working directory |
@@ -128,15 +93,13 @@ junit-leak-detector/                       ← parent (packaging=pom)
 ├── library/                               ← detector library (artifactId=junit-leak-detector)
 ├── attribution/                           ← attribution module: raw-report → final report
 │   └── bin/junit-leak-detector-attribution
-├── orchestrator/                          ← double-run investigation tool (runnable class + Bash launcher)
-│   └── bin/junit-leak-detector-orchestrator
 └── integration-tests/                     ← end-to-end consumer test apps (not published)
     ├── basic/                             ← 5 monitors (no DDB)
     ├── ddb/                               ← DynamoDB monitor only
     └── scenarios/                         ← failsafe-driven scenario tests over basic + ddb
 ```
 
-Publishable artifacts: `junit-leak-detector` (library) and `junit-leak-detector-attribution`. The orchestrator and integration-tests modules are tools/tests and are not deployed.
+Publishable artifacts: `junit-leak-detector` (library) and `junit-leak-detector-attribution`. The integration-tests modules are tests and are not deployed.
 
 ### Build
 

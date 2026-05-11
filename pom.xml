@@ -12,7 +12,6 @@
     <modules>
         <module>library</module>
         <module>attribution</module>
-        <module>orchestrator</module>
         <module>integration-tests</module>
     </modules>
 

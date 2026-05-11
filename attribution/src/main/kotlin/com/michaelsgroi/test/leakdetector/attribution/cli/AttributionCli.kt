@@ -38,7 +38,7 @@ object AttributionCli {
         // Always write a leak summary HTML file next to the input raw report. Each
         // summary gets an ISO-8601-seconds timestamp suffix so multiple invocations
         // don't clobber.
-        val outputDir = parsed.firstReport.parentFile ?: File(".")
+        val outputDir = parsed.rawReport.parentFile ?: File(".")
         val summaryFile = File(outputDir, "leak-summary-${timestampNow()}.html")
         summaryFile.parentFile?.mkdirs()
         summaryFile.writeText(html)
@@ -48,13 +48,8 @@ object AttributionCli {
     }
 
     private fun buildReport(parsed: ParsedArgs): FinalReport {
-        val first = RawReportReader.read(parsed.firstReport)
-        val firstAttribution = Attribution.attributeSingleRun(first, parsed.memoryGrowthThresholdBytes)
-        if (parsed.secondReport == null) return firstAttribution
-
-        val second = RawReportReader.read(parsed.secondReport)
-        val secondAttribution = Attribution.attributeSingleRun(second, parsed.memoryGrowthThresholdBytes)
-        return Attribution.intersectAcrossRuns(firstAttribution, secondAttribution)
+        val report = RawReportReader.read(parsed.rawReport)
+        return Attribution.attributeSingleRun(report, parsed.memoryGrowthThresholdBytes)
     }
 
     private fun parseArgs(
@@ -97,24 +92,18 @@ object AttributionCli {
             }
         }
 
-        if (positional.isEmpty() || positional.size > 2) {
-            err.println("Error: expected 1 or 2 raw report file paths, got ${positional.size}")
+        if (positional.size != 1) {
+            err.println("Error: expected exactly 1 raw report file path, got ${positional.size}")
             printUsage(err)
             return null
         }
-        val first = File(positional[0])
-        val second = positional.getOrNull(1)?.let { File(it) }
-        if (!first.isFile) {
-            err.println("Error: raw report file not found: ${first.absolutePath}")
-            return null
-        }
-        if (second != null && !second.isFile) {
-            err.println("Error: raw report file not found: ${second.absolutePath}")
+        val rawReport = File(positional[0])
+        if (!rawReport.isFile) {
+            err.println("Error: raw report file not found: ${rawReport.absolutePath}")
             return null
         }
         return ParsedArgs(
-            firstReport = first,
-            secondReport = second,
+            rawReport = rawReport,
             memoryGrowthThresholdBytes = memoryThresholdMb * BYTES_PER_MB,
         )
     }
@@ -122,13 +111,12 @@ object AttributionCli {
     private fun printUsage(err: PrintStream) {
         err.println(
             """
-            Usage: attribution <raw-report-1> [raw-report-2] [options]
+            Usage: attribution <raw-report> [options]
 
-            Reads one or two raw reports produced by the test runner and writes the
+            Reads a raw report produced by the test runner and writes the
             attributed leak summary as `leak-summary-<ISO-timestamp>.html` next to
             the input raw report; the file is opened in the default browser
-            (suppress with JUNIT_LEAK_DETECTOR_NO_OPEN=1). With two reports, the
-            candidate sets are intersected across runs to produce sharper attribution.
+            (suppress with JUNIT_LEAK_DETECTOR_NO_OPEN=1).
 
             Options:
               --memory-threshold-mb <n>     Memory growth threshold in MB (default: 0)
@@ -142,8 +130,7 @@ object AttributionCli {
     private val FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH-mm-ss")
 
     private data class ParsedArgs(
-        val firstReport: File,
-        val secondReport: File?,
+        val rawReport: File,
         val memoryGrowthThresholdBytes: Long,
     )
 

@@ -10,7 +10,7 @@ class ConfigurationTest {
         val config = Configuration(propertiesLoader = { null }, systemPropertyLookup = { null })
         assertEquals("", config.monitoredResourceTypes)
         assertEquals(10L, config.threadGracePeriodSeconds)
-        assertEquals(1024L, config.memoryGrowthThresholdMb)
+        assertEquals(50L, config.memoryGrowthThresholdMb)
         assertEquals("", config.buildFailureResourceTypes)
         assertEquals(SnapshotGranularity.CLASS, config.snapshotGranularity)
     }

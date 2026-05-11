@@ -59,19 +59,6 @@ object Attribution {
         return FinalReport(discrete, memory, monitoredTypes = report.header.monitors)
     }
 
-    fun intersectAcrossRuns(
-        run1: FinalReport,
-        run2: FinalReport,
-    ): FinalReport {
-        val discrete = intersectDiscrete(run1.discreteLeaks, run2.discreteLeaks)
-        val memory = intersectMemory(run1.memoryLeaks, run2.memoryLeaks)
-        // Union the monitored types: a type counts as "monitored in this investigation"
-        // if either run was monitoring it. In practice the orchestrator drives both runs
-        // with the same config, so the union and intersection match.
-        val monitored = (run1.monitoredTypes + run2.monitoredTypes).distinct()
-        return FinalReport(discrete, memory, monitoredTypes = monitored)
-    }
-
     private fun computeDiscreteLeaks(
         snapshots: List<RawSnapshot>,
         baseline: RawSnapshot,
@@ -184,59 +171,4 @@ object Attribution {
             is DiscreteResource.ThreadResource -> "${resource.name} (ID: ${resource.id})"
             is DiscreteResource.Simple -> resource.value
         }
-
-    private fun intersectDiscrete(
-        run1: List<DiscreteLeak>,
-        run2: List<DiscreteLeak>,
-    ): List<DiscreteLeak> {
-        val run2Index = run2.associateBy { it.resourceType to it.resourceKey }
-        return run1.mapNotNull { leak ->
-            val other = run2Index[leak.resourceType to leak.resourceKey] ?: return@mapNotNull null
-            mergeCandidateSet(leak, other)
-        }
-    }
-
-    private fun mergeCandidateSet(
-        a: DiscreteLeak,
-        b: DiscreteLeak,
-    ): DiscreteLeak {
-        val intersected = intersectCandidates(a.candidateSet, b.candidateSet)
-        val (final, defect) =
-            if (intersected.isNotEmpty()) {
-                intersected to false
-            } else {
-                // Empty intersection: fall back to union and flag as defect for diagnosis.
-                unionCandidates(a.candidateSet, b.candidateSet) to true
-            }
-        return a.copy(candidateSet = final, emptyCandidateSetDefect = defect)
-    }
-
-    private fun intersectMemory(
-        run1: List<MemoryLeak>,
-        run2: List<MemoryLeak>,
-    ): List<MemoryLeak> {
-        // Per-class attribution: a class is a real leak only if both runs flagged it.
-        val run2Classes = run2.map { it.testClass }.toSet()
-        return run1.filter { it.testClass in run2Classes }
-    }
-
-    private fun intersectCandidates(
-        a: List<CandidateClass>,
-        b: List<CandidateClass>,
-    ): List<CandidateClass> {
-        val bNames = b.map { it.testClass }.toSet()
-        return a.filter { it.testClass in bNames }
-    }
-
-    private fun unionCandidates(
-        a: List<CandidateClass>,
-        b: List<CandidateClass>,
-    ): List<CandidateClass> {
-        val seen = mutableSetOf<String>()
-        val result = mutableListOf<CandidateClass>()
-        for (c in a + b) {
-            if (seen.add(c.testClass)) result += c
-        }
-        return result
-    }
 }

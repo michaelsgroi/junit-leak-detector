@@ -15,13 +15,12 @@ The Resource Leak Detector (the component) identifies unit tests that are leakin
 
 ## Architecture
 
-The component is split into three independent pieces. Each can be invoked, replaced, or re-run independently of the others.
+The component is split into two independent pieces. Each can be invoked, replaced, or re-run independently of the other.
 
 - **C1 — Test runner + raw report.** Runs the unit-test suite, captures resource lifecycle data, emits a structured raw report. Knows nothing about attribution.
-- **C2 — Optional second run.** Runs the suite a second time using a different test ordering (see REQ-2.4). Emits its own raw report.
-- **C3 — Attribution.** Independent. Takes one or two raw reports as input and produces attribution output (the candidate set per leak). Can be re-run without re-running tests.
+- **C2 — Attribution.** Independent. Takes a raw report as input and produces attribution output (the candidate set per leak). Can be re-run without re-running tests.
 
-An optional AI-assisted "skill" layer may sit on top of C3, applying name heuristics and source grep to narrow candidate sets to a single most-likely owner. The skill layer is out of scope for this component but the C3 output format MUST support it cleanly.
+An optional AI-assisted "skill" layer may sit on top of C2, applying name heuristics and source grep to narrow candidate sets to a single most-likely owner. The skill layer is out of scope for this component but the C2 output format MUST support it cleanly.
 
 ## Requirements
 
@@ -67,23 +66,15 @@ An optional AI-assisted "skill" layer may sit on top of C3, applying name heuris
 - **REQ-2.2.3**: For each candidate test class, the report MUST include the timestamp when the class started and the timestamp when it ended, both in ISO8601 format.
 
 #### 2.3 Attribution component is independent
-- **REQ-2.3.1**: Attribution (C3) MUST be implemented as a separate component that consumes one or more raw reports produced by C1/C2 and produces the final report. Attribution MUST be re-runnable without re-running tests.
+- **REQ-2.3.1**: Attribution (C2) MUST be implemented as a separate component that consumes a raw report produced by C1 and produces the final report. Attribution MUST be re-runnable without re-running tests.
 - **REQ-2.3.2**: The raw report format MUST contain enough information (per-resource appearance times, per-test-class lifecycle intervals) to compute candidate sets without re-instrumenting the suite.
-
-#### 2.4 Differential ordering (optional second run)
-- **REQ-2.4.1**: The component MUST support an optional "double run" mode driven by an orchestrator. When enabled, the suite is executed twice with different test orderings; the attribution component intersects the candidate sets across runs to produce sharper attribution.
-- **REQ-2.4.2**: Different orderings MUST be produced via Surefire's built-in `runOrder` configuration, not via custom shuffling code. The first run uses `runOrder=alphabetical`. The second run uses `runOrder=random` with a recorded seed.
-- **REQ-2.4.3**: The seed used for the second run MUST be recorded so the run is reproducible (default: current time millis; overridable via the orchestrator's `--seed` flag).
-- **REQ-2.4.4**: Default invocation is single-run (a normal `mvn test`, wider candidate sets). Double-run mode is opt-in by invoking the orchestrator.
-- **REQ-2.4.5**: The orchestrator is an investigation/isolation tool. It does NOT impose its own build-failure decision: it produces sharper attribution and exits 0 on a clean orchestration. Build-failure-on-leak is the library's responsibility during normal `mvn test` (see REQ-4.2).
-- **REQ-2.4.6**: The orchestrator MUST NOT propagate sub-process exit codes. A surefire test failure during a run is exactly when an attribution report is most useful — failing the orchestrator because the suite had a test failure would defeat the purpose. The orchestrator returns non-zero only on internal errors (missing raw reports, unparseable output, sub-process timeout).
 
 ### 3. Test-isolation Prerequisites
 
 Reliable detection requires that all test classes share one JVM for the duration of the run. Two prerequisites flow from this:
 
-- **REQ-3.1**: The supported invocation mechanism is the double-run orchestrator Maven plugin (see Architecture / REQ-2.4), which controls the full Surefire configuration on its invocations and explicitly sets `forkCount=1` and `reuseForks=true`. Users who consume the library without the orchestrator are responsible for setting these themselves.
-- **REQ-3.2**: The required Surefire settings (`forkCount=1`, `reuseForks=true`, plus `junit.jupiter.extensions.autodetection.enabled=true`) MUST be documented in user-facing documentation, with an example pom snippet for the standalone-library case and a note that the orchestrator handles them automatically.
+- **REQ-3.1**: Consumers MUST configure Surefire with `forkCount=1` and `reuseForks=true`. Without these settings, cross-class leaks are invisible because each fork starts clean.
+- **REQ-3.2**: The required Surefire settings (`forkCount=1`, `reuseForks=true`, plus `junit.jupiter.extensions.autodetection.enabled=true`) MUST be documented in user-facing documentation with an example pom snippet.
 - **REQ-3.3**: At runtime, the component MUST detect whether the current JVM is being shared across the entire test plan by writing a per-fork marker file (containing the JVM PID and start timestamp) to the configured output directory at `testPlanExecutionStarted` and reading any pre-existing markers. If markers from prior forks of the same suite invocation are observed, the component MUST log a WARN naming the suspected misconfiguration (`forkCount` > 1 or `reuseForks=false`) and the implication (cross-class leaks will be invisible/under-attributed). The component MUST NOT refuse to run; it proceeds and reports what it can.
 - **REQ-3.4**: Static `pom.xml` parsing is explicitly out of scope: profile-resolved Surefire configuration cannot be reliably reproduced at runtime, and a parser would either give false positives (missing profile-aware overrides) or false negatives (missing system-property overrides). The runtime fork-detection in REQ-3.3 covers the actual failure mode without depending on accurate static analysis.
 
@@ -95,11 +86,10 @@ Reliable detection requires that all test classes share one JVM for the duration
 - **REQ-4.1.3**: When a configured monitor requires a runtime dependency that is not on the consuming project's classpath, the component MUST fail fast at startup with a clear error message naming the missing dependency and the monitor that requires it. The component MUST NOT silently disable the monitor.
 
 #### 4.2 Build Failure on Leak Detection
-- **REQ-4.2.1**: Build failure on leak detection is **the library's responsibility**, applied during normal `mvn test` invocations by the inline attribution path. The orchestrator (double-run mode) does NOT impose its own build-failure decision; it is an investigation/isolation tool that produces sharper attribution and exits 0 on a clean Maven run.
+- **REQ-4.2.1**: Build failure on leak detection is **the library's responsibility**, applied during normal `mvn test` invocations by the inline attribution path.
 - **REQ-4.2.2**: The library MUST support a configuration parameter (`build.failure.resource.types`) that specifies a comma-separated list of resource types that should cause the build to fail when leaks are detected. Empty list = build failure disabled. Non-empty list = build failure enabled for the named types.
 - **REQ-4.2.3**: When `build.failure.resource.types` is non-empty and leaks are detected for any of those types, the library MUST cause the build to fail at the end of the test run.
 - **REQ-4.2.4**: When `build.failure.resource.types` is empty, or when leaks are detected only for types not in the list, the library MUST report leaks without failing the build.
-- **REQ-4.2.5**: The orchestrator MUST suppress the library's per-run build-failure trigger by passing `-Dresource.leak.detector.build.failure.resource.types=` (empty) on each sub-process `mvn test` invocation. This prevents run 1 from short-circuiting before run 2 can produce its raw report. Whatever the consuming project has configured is overridden to empty for these orchestrator-driven runs.
 
 ### 5. Non-functional Requirements
 

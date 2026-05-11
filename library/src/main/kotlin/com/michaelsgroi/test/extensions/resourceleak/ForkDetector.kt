@@ -37,8 +37,7 @@ class ForkDetector(
                 "Multiple forks detected for this suite: {} prior fork(s) ran in the last {}s. " +
                     "This usually means forkCount>1 or reuseForks=false in Surefire, which makes " +
                     "cross-class leaks invisible because each fork starts clean. " +
-                    "Set forkCount=1 and reuseForks=true (or use the orchestrator plugin which " +
-                    "sets them automatically). Prior markers: {}",
+                    "Set forkCount=1 and reuseForks=true. Prior markers: {}",
                 priorMarkers.size,
                 priorMarkerWindow.seconds,
                 priorMarkers,

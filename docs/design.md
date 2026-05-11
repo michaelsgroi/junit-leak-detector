@@ -8,11 +8,10 @@ The Resource Leak Detector monitors and reports resource leaks in unit tests, tr
 
 Resource snapshots are captured **at JUnit lifecycle boundaries only** — never via scheduled wall-clock polling. The component uses JUnit Platform's `TestExecutionListener` API for global test-plan lifecycle (suite start/end) and a globally-registered JUnit Jupiter `Extension` for per-class and per-test lifecycle (`BeforeAllCallback`, `BeforeEachCallback`, `AfterEachCallback`, `AfterAllCallback`).
 
-The component is split into three independent pieces (per the Architecture section of the requirements):
+The component is split into two independent pieces (per the Architecture section of the requirements):
 
 - **C1 — Test runner + raw report.** Captures resource snapshots at lifecycle boundaries during a single test run; emits a structured raw report. No attribution logic.
-- **C2 — Second run (optional).** Drives the test runner a second time with a different Surefire `runOrder`; emits its own raw report.
-- **C3 — Attribution.** Independent post-processor. Consumes one or two raw reports; computes the candidate set per leak; emits the final human-readable leak report.
+- **C2 — Attribution.** Independent post-processor. Consumes a raw report; computes the candidate set per leak; emits the final human-readable leak report.
 
 All component code lives in package `com.michaelsgroi.test.extensions.resourceleak`.
 
@@ -20,21 +19,19 @@ All timestamps use ISO8601 format.
 
 ### Repo Layout
 
-The project is a multi-module Maven build. The root pom is `packaging=pom` and aggregates four sibling modules:
+The project is a multi-module Maven build. The root pom is `packaging=pom` and aggregates three sibling modules:
 
 ```
 junit-leak-detector/                     ← parent (packaging=pom)
 ├── library/                             ← C1: detector library (the JAR consumers depend on)
-├── attribution/                         ← C3: attribution module (reusable lib + standalone CLI)
-├── orchestrator/                        ← C2: double-run runnable class + Bash launcher
-│   └── bin/junit-leak-detector-orchestrator
+├── attribution/                         ← C2: attribution module (reusable lib + standalone CLI)
 └── integration-tests/                   ← aggregator
     ├── basic/                           ← subject suite: leaking + control test classes
     ├── ddb/                             ← subject suite: DynamoDB Local leaking test
     └── scenarios/                       ← failsafe-driven scenario tests (verifies basic + ddb)
 ```
 
-Only `library`, `attribution`, and `orchestrator` are publishable. `integration-tests/*` are test-only and not deployed.
+Only `library` and `attribution` are publishable. `integration-tests/*` are test-only and not deployed.
 
 ### Scenario testing
 
@@ -65,37 +62,26 @@ To fully disable the Resource Leak Detector with zero runtime overhead, the cons
 
 ## Test-isolation Prerequisites
 
-Reliable detection requires every test class in the suite to share one JVM. With `forkCount` > 1 or `reuseForks=false`, each fork starts clean and cross-class sticky leaks become invisible. The component handles this in two complementary ways:
+Reliable detection requires every test class in the suite to share one JVM. With `forkCount` > 1 or `reuseForks=false`, each fork starts clean and cross-class sticky leaks become invisible. Consumers MUST configure Surefire with `forkCount=1`, `reuseForks=true`, and `junit.jupiter.extensions.autodetection.enabled=true`.
 
-### Orchestrator owns the invocation
-
-The supported entry point is the double-run orchestrator Maven plugin (see [C2 — Second Run](#c2--second-run-optional)). The orchestrator invokes Surefire with the required flags set explicitly on the command line:
-
-```
--DforkCount=1 -DreuseForks=true -Djunit.jupiter.extensions.autodetection.enabled=true
-```
-
-These overrides take precedence over whatever the consuming project has in `pom.xml` or active profiles. As long as users invoke the detector through the orchestrator, the prerequisites are satisfied by construction — no static analysis required.
-
-### Runtime fork-detection (standalone library use)
+### Runtime fork-detection
 
 Static parsing of `pom.xml` is explicitly out of scope. Profile-resolved Surefire configuration cannot be reliably reproduced from inside the test JVM (profiles, system-property overrides, plugin inheritance), and a partial parser would produce both false positives and false negatives.
 
-Instead, when consumers use the library without the orchestrator, the component performs a **runtime fork-detection check** in `ResourceLeakMonitor.testPlanExecutionStarted`:
+Instead, the component performs a **runtime fork-detection check** in `ResourceLeakMonitor.testPlanExecutionStarted`:
 
 1. Write a per-fork marker file to `target/resource-leak-detector/forks/<pid>.marker` containing the current JVM PID and start timestamp.
 2. List existing `*.marker` files in the same directory. Any markers older than the current JVM start (within a recent window, e.g., 5 minutes) suggest a prior fork of the same `mvn test` invocation has already run — i.e., `forkCount > 1` or `reuseForks=false`.
-3. If prior markers are observed, log at WARN naming the suspected misconfiguration (`forkCount` > 1 or `reuseForks=false`), explaining the implication (cross-class leaks will be invisible or under-attributed), and pointing at the orchestrator + the documented Surefire snippet. The component does NOT refuse to run; it proceeds and reports what it can.
+3. If prior markers are observed, log at WARN naming the suspected misconfiguration (`forkCount` > 1 or `reuseForks=false`) and the implication (cross-class leaks will be invisible or under-attributed). The component does NOT refuse to run; it proceeds and reports what it can.
 4. The marker directory is cleared at the start of each test plan when no prior markers are present (i.e., on the first fork), so stale markers from previous days don't trigger false warnings.
 
-This catches the actual failure mode (multiple JVMs servicing one test plan) without relying on accurate static analysis. The trade-off: the warning fires after the first misconfigured fork has already run and produced a partial report; that's acceptable since the orchestrator is the recommended path for users who care.
+This catches the actual failure mode (multiple JVMs servicing one test plan) without relying on accurate static analysis. The warning fires after the first misconfigured fork has already run; the user can fix the configuration and re-run.
 
 ### Documentation
 
 User-facing documentation MUST include:
 
-- A note that the orchestrator is the recommended invocation and handles all prerequisites automatically.
-- For standalone-library users: an example Surefire snippet that sets `forkCount=1`, `reuseForks=true`, and `junit.jupiter.extensions.autodetection.enabled=true`.
+- An example Surefire snippet that sets `forkCount=1`, `reuseForks=true`, and `junit.jupiter.extensions.autodetection.enabled=true`.
 - A description of the runtime fork-detection warning and how to fix the underlying configuration.
 
 ## C1 — Test Runner + Raw Report
@@ -108,7 +94,7 @@ JUnit Platform `TestExecutionListener` that orchestrates suite-level lifecycle.
 
 * Registered globally via `META-INF/services/org.junit.platform.launcher.TestExecutionListener`.
 * In `testPlanExecutionStarted`: writes the per-fork marker (see [Runtime fork-detection](#runtime-fork-detection-standalone-library-use)), initializes `ResourceState`, and triggers the **baseline snapshot** (each enabled monitor captures its current state — these resources are excluded from leak detection).
-* In `testPlanExecutionFinished`: triggers the **final snapshot**, then writes the raw report to disk and invokes the attribution component (C3) if running in single-pass mode.
+* In `testPlanExecutionFinished`: triggers the **final snapshot**, then writes the raw report to disk and invokes the attribution component (C2).
 
 **ResourceLeakMonitorTestLifecycleExtension**
 
@@ -192,7 +178,7 @@ The delta lives as a private mutable field on `ResourceLeakMonitorTestLifecycleE
 
 **Why BeforeAll only.** The wait is intentionally not applied at `BeforeEachCallback`. Per-method settling would multiply the wait by methods-per-class with diminishing return on attribution sharpness, since the default attribution granularity is class-level. If `snapshot.granularity=test` is enabled in the future, per-test settling can be added under a separate config flag.
 
-**Interaction with raw report.** The settle wait is a snapshot-timing concern only. It does not tag resources in the raw report or alter C3's attribution algorithm — its sole effect is to push the BeforeAll timestamp later, which naturally tightens the candidate sets C3 computes from lifecycle intervals.
+**Interaction with raw report.** The settle wait is a snapshot-timing concern only. It does not tag resources in the raw report or alter attribution algorithm — its sole effect is to push the BeforeAll timestamp later, which naturally tightens the candidate sets attribution computes from lifecycle intervals.
 
 ### Raw report (C1 output)
 
@@ -240,11 +226,11 @@ Schema:
 }
 ```
 
-Each snapshot records the full resource set observed at that boundary. Discrete resource keys correspond to the same config-value names accepted in `monitored.resource.types`; a key only appears if its monitor is enabled. Numeric values and thread IDs are emitted as JSON strings to avoid loss of precision (Long > 2^53). C3 computes deltas between consecutive snapshots when needed for attribution; the on-disk format itself is uncompressed for simplicity and readability.
+Each snapshot records the full resource set observed at that boundary. Discrete resource keys correspond to the same config-value names accepted in `monitored.resource.types`; a key only appears if its monitor is enabled. Numeric values and thread IDs are emitted as JSON strings to avoid loss of precision (Long > 2^53). attribution computes deltas between consecutive snapshots when needed for attribution; the on-disk format itself is uncompressed for simplicity and readability.
 
 Estimated size for the zos suite (~841 test classes, per-class snapshots): ~60 KB/snapshot × ~1,684 snapshots ≈ ~100 MB per run. Acceptable for v1; revisit with delta encoding or compression if it becomes unwieldy in practice.
 
-A self-contained HTML summary is written alongside as `leak-summary-<ISO-timestamp>.html` (sibling of the raw report, sharing the same timestamp). The summary mirrors the logged output and serves as the user-facing leak report; the raw report is the machine-readable contract consumed by C3. The library also logs a plain-text version of the summary at INFO level so it shows up in CI build logs. The library inline path does not auto-open the HTML — running tests should not open browser tabs as a side effect.
+A self-contained HTML summary is written alongside as `leak-summary-<ISO-timestamp>.html` (sibling of the raw report, sharing the same timestamp). The summary mirrors the logged output and serves as the user-facing leak report; the raw report is the machine-readable contract consumed by attribution. The library also logs a plain-text version of the summary at INFO level so it shows up in CI build logs. The library inline path does not auto-open the HTML — running tests should not open browser tabs as a side effect.
 
 ### Streaming write
 
@@ -254,88 +240,28 @@ The raw report is **streamed to disk during the test run**, not buffered in memo
 - If the JVM crashes or is killed mid-run, a streamed report still contains everything captured up to the crash — useful for diagnosing the crash itself.
 - Writes happen on the test thread (snapshotting is already synchronous), so no separate I/O thread is needed.
 
-The report uses a streaming-friendly format: a JSON header (run-level metadata) followed by [JSON Lines](https://jsonlines.org/) — one snapshot object per line. C3 reads this back as a streaming parse rather than loading the whole file. The closing wrapper / metadata is finalized in `testPlanExecutionFinished`.
+The report uses a streaming-friendly format: a JSON header (run-level metadata) followed by [JSON Lines](https://jsonlines.org/) — one snapshot object per line. attribution reads this back as a streaming parse rather than loading the whole file. The closing wrapper / metadata is finalized in `testPlanExecutionFinished`.
 
-The schema is the contract between C1 and C3: everything C3 needs to compute candidate sets must be derivable from the raw report alone.
+The schema is the contract between C1 and C2: everything C2 needs to compute candidate sets must be derivable from the raw report alone.
 
-## C2 — Second Run (Optional)
+## C2 — Attribution
 
-C2 is the `orchestrator` module. For v1 it ships as a **runnable class** (`OrchestratorMain`) plus a thin Bash launcher (`bin/junit-leak-detector-orchestrator`) that builds the classpath from the local Maven repo and invokes it. A Maven plugin wrapper is deferred — the runnable-class shape is the same as the standalone attribution CLI and keeps the orchestrator usable from any CI script today. Wrapping it in a plugin (or `exec-maven-plugin` recipe) is a backlog item once we know we want it.
+A separate, post-process component. Input: a raw report from C1. Output: the final human-readable leak report.
 
-Invocation:
+C2 has no dependency on JUnit, no test execution, no resource monitoring code. It is pure data transformation and is re-runnable against existing raw reports without re-running the suite.
 
-```
-java -cp <orchestrator-jar>:<attribution-jar>:<kotlin-stdlib-jar> \
-    com.michaelsgroi.test.leakdetector.orchestrator.OrchestratorMain \
-    --project-root <module-dir> [--runs 1|2] [--seed <long>] [--output-dir <dir>] \
-    [--memory-threshold-mb <n>]
-```
+C2 ships in two forms backed by the same code:
 
-or via the bundled launcher:
-
-```
-junit-leak-detector-orchestrator --project-root <module-dir> [--runs 1|2] ...
-```
-
-When double-run mode is selected (`--runs 2`, the default), the orchestrator invokes `mvn test` twice as a sub-process against the consuming module. **The orchestrator controls the full Surefire configuration for both runs** so neither run depends on whatever defaults the project pom happens to have. Flags forced via `-D` properties on each invocation:
-
-- `surefire.runOrder` — `alphabetical` for run 1, `random` for run 2
-- `surefire.runOrder.random.seed` — recorded for run 2 (defaults to current time millis; overridable via `--seed`)
-- `forkCount=1`, `reuseForks=true` — required for cross-class leak detection
-- `junit.jupiter.extensions.autodetection.enabled=true` — required for the extension to load
-- `resource.leak.detector.report.output.dir` — points each run at its own output directory; the orchestrator then renames the produced raw report into `raw-report-N-<ts>.json` alongside the final summary
-
-Outputs (under `--output-dir`, which defaults to `<project>/target/resource-leak-detector/orchestrator-<uuid>/`):
-1. Run 1: `raw-report-1.json`
-2. Run 2: `raw-report-2.json`
-3. Final intersected leak summary: `leak-summary-<ts>.html` (all three files share the same `<ts>`); opened in the default browser unless `JUNIT_LEAK_DETECTOR_NO_OPEN=1` is set
-
-The orchestrator is a thin coordinator. The actual capture work is done by the library in each `mvn test` invocation. The library is unaware of run pairing — it just writes one raw report per JVM lifetime; the orchestrator reads both and invokes the attribution module's `intersectAcrossRuns` directly (no sub-process needed; orchestrator and attribution are in the same JVM).
-
-Single-run mode (`--runs 1`) is supported for cases where users just want the orchestrator's invocation discipline (forced Surefire flags, output path management) without the cost of running twice. The intersection step is skipped; the final report is built from `raw-report-1.json` only.
-
-**Caveat on intersection across runs**: candidate sets are intersected by `(resourceType, resourceKey)`. For resource types whose identity is stable across JVM runs (system properties, env vars, DDB tables, memory) intersection narrows attribution as intended. For thread IDs and ephemeral port numbers — both of which differ per JVM — the current intersection-by-identity logic effectively drops these leaks from the final intersected report. Improving this (e.g., intersecting by candidate-class-set per leak rather than by exact resource identity) is a known follow-up.
-
-### Build failure and the orchestrator
-
-Build failure on detected leaks is **the library's job**, applied at normal `mvn test` time by the inline `AttributionRunner` based on `resource.leak.detector.build.failure.resource.types`. That's the CI gate.
-
-The orchestrator is a separate use case — investigation/isolation. Someone runs it manually (or from a CI investigation job) to get sharper attribution after a CI build has already failed or to proactively analyze a suite. **The orchestrator does not impose its own build-failure decision**; it produces two raw reports and a final intersected `leak-summary-<ts>.html` and exits 0 on a clean orchestration regardless of what the suite did.
-
-To prevent the library's per-run trigger from short-circuiting run 1 before run 2 gets a chance to run, the orchestrator passes `-Dresource.leak.detector.build.failure.resource.types=` (empty) on each sub-process `mvn test` invocation. Whatever the consuming project has configured for build failure is overridden to empty for these orchestrator-driven runs. The orchestrator does not read or honor `build.failure.resource.types` from its own JVM either.
-
-If a user wants build-failure semantics, they run the library directly via `mvn test` — the orchestrator is the wrong tool for that job.
-
-### Orchestrator and sub-process exit codes
-
-The orchestrator does **not** propagate sub-process exit codes. A surefire test failure during a run is exactly the situation we want a leak report for — failing the investigation tool because the suite had a flaky test would defeat the purpose. The orchestrator exits 0 on a clean orchestration; it returns non-zero only on internal errors (missing raw report, unparseable output, sub-process timeout).
-
-This applies to production users running the orchestrator as an investigation aid. The repo's own scenario tests (`integration-tests/scenarios/`) additionally assert that no sub-process emitted `BUILD FAILURE` — because we control the suite under test and a sub-process failure there would indicate a regression in our scaffolding, not legitimate test churn.
-
-## C3 — Attribution
-
-A separate, post-process component. Input: one or two raw reports from C1/C2. Output: the final human-readable leak report.
-
-C3 has no dependency on JUnit, no test execution, no resource monitoring code. It is pure data transformation and is re-runnable against existing raw reports without re-running the suite.
-
-C3 ships in two forms backed by the same code:
-
-- **Inline**: invoked from `ResourceLeakMonitor.testPlanExecutionFinished` when `runs=1`. Reads its own just-written raw report and prints the final leak report. Zero-friction default.
-- **Standalone CLI**: required for `runs=2` (C1 cannot see the second run from inside the first), and useful for re-running attribution against saved raw reports without re-running tests. Distributed alongside the library.
+- **Inline**: invoked from `ResourceLeakMonitor.testPlanExecutionFinished`. Reads its own just-written raw report and prints the final leak report. Zero-friction default.
+- **Standalone CLI**: useful for re-running attribution against saved raw reports without re-running tests. Distributed alongside the library.
 
 ### Candidate-set computation
 
-For each leak, C3:
+For each leak, C2:
 
 1. Identifies the **detection window** as `[t_last_absent, t_first_present]`, where `t_last_absent` is the timestamp of the most recent snapshot in which the resource was absent, and `t_first_present` is the timestamp of the earliest subsequent snapshot in which it was present. (For numeric resources, the analogous calculation uses the threshold-crossing point.)
 2. Computes the **candidate set** as every test class whose `[start, end]` lifecycle interval intersects the detection window. A class that ended before `t_last_absent` is excluded; a class that started after `t_first_present` is excluded.
-3. The candidate set must be non-empty. If C3 computes an empty set, it logs a defect indicator (this means the lifecycle data or snapshot ordering is inconsistent — a bug to be tracked).
-
-For double-run mode:
-
-1. C3 computes per-run candidate sets independently (using each run's own snapshot stream and lifecycle map).
-2. C3 then **intersects** the candidate sets across the two runs. The intersection is the final reported candidate set.
-3. If the intersection is empty (rare — would mean the leak appeared in completely disjoint candidate sets across orderings), C3 falls back to the union and notes it in the report.
+3. The candidate set must be non-empty. If C2 computes an empty set, it logs a defect indicator (this means the lifecycle data or snapshot ordering is inconsistent — a bug to be tracked).
 
 ### Final report
 
@@ -413,14 +339,12 @@ Configuration values are owned by the consuming project. They are read at startu
 monitored.resource.types=ports,threads,memory
 
 # Detection thresholds
-memory.growth.threshold.mb=1024
+memory.growth.threshold.mb=50
 
 # Build failure
 build.failure.enabled=false
 build.failure.resource.types=
 
-# Run mode
-runs=1                       # 1 = single run; 2 = double-run with differential ordering
 snapshot.granularity=class   # class = BeforeAll/AfterAll only; test = also BeforeEach/AfterEach
 
 # Pre-class settle wait
@@ -432,10 +356,9 @@ preclass.settle.poll.interval.seconds=1
 | Key | Default | Notes |
 |---|---|---|
 | `monitored.resource.types` | (empty) | Comma-separated. Valid: `ports`, `threads`, `systemprops`, `envvars`, `memory`, `ddbtables`. |
-| `memory.growth.threshold.mb` | `1024` | Memory leak threshold. |
+| `memory.growth.threshold.mb` | `50` | Per-class heap growth threshold. |
 | `build.failure.enabled` | `false` | Master switch for build failure on detected leaks. |
 | `build.failure.resource.types` | (empty) | Comma-separated list of resource types whose leaks fail the build. |
-| `runs` | `1` | Set to `2` to enable C2's differential-ordering mode. |
 | `snapshot.granularity` | `class` | `class` = snapshots at `BeforeAllCallback`/`AfterAllCallback` only. `test` = also at `BeforeEachCallback`/`AfterEachCallback` for fine-grained debugging at the cost of ~Nx more snapshot operations. |
 | `preclass.settle.enabled` | `false` | When `true`, the extension waits for threads/ports that appeared during the previous class to clear before snapshotting at the next class's `BeforeAll`. |
 | `preclass.settle.max.seconds` | `10` | Maximum total time to wait for carry-over resources to clear. |
@@ -502,4 +425,4 @@ A resource that is allocated and released within a single test is not a leak by 
 
 ### Backlog
 
-**B1 — Allocation-time stack-trace capture.** Bytecode-instrumentation-based capture of the stack at the moment a resource is allocated (port open, table create, thread spawn, system property set), via a Java agent built on ASM or ByteBuddy. This would let the component report the exact line that allocated each leaked resource, bypassing the candidate-set step entirely and resolving lazy-allocation cases (e.g., a Jetty server started in test A whose `qtp*` expansion threads spawn under load during test B). Deferred from v1 — boundary snapshots plus optional differential ordering should keep candidate sets small enough in practice.
+**B1 — JFR-based thread creation attribution.** Capture creation-time stack traces for threads using JFR's `jdk.ThreadStart` event so each leaked thread can be reported with the line that created it. See B1 in `requirements.md` for details.

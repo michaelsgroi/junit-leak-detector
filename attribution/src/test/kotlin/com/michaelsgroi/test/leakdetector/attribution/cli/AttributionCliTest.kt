@@ -22,16 +22,6 @@ class AttributionCliTest {
         {"type":"footer","finishedAt":"2024-01-01T00:00:04Z","lifecycles":[{"testClass":"com.A","start":"2024-01-01T00:00:01Z","end":"2024-01-01T00:00:02Z"}]}
         """.trimIndent()
 
-    private val secondRunPort8080AttributedToB =
-        """
-        {"type":"header","runId":"r2","startedAt":"2024-01-01T00:10:00Z","monitors":["ports"],"snapshotGranularity":"class"}
-        {"type":"snapshot","kind":"BASELINE","timestamp":"2024-01-01T00:10:00Z","testClass":null,"testMethod":null,"discrete":{"ports":[]},"numeric":{}}
-        {"type":"snapshot","kind":"BEFORE_ALL","timestamp":"2024-01-01T00:10:01Z","testClass":"com.B","testMethod":null,"discrete":{"ports":[]},"numeric":{}}
-        {"type":"snapshot","kind":"AFTER_ALL","timestamp":"2024-01-01T00:10:02Z","testClass":"com.B","testMethod":null,"discrete":{"ports":[8080]},"numeric":{}}
-        {"type":"snapshot","kind":"FINAL","timestamp":"2024-01-01T00:10:03Z","testClass":null,"testMethod":null,"discrete":{"ports":[8080]},"numeric":{}}
-        {"type":"footer","finishedAt":"2024-01-01T00:10:04Z","lifecycles":[{"testClass":"com.B","start":"2024-01-01T00:10:01Z","end":"2024-01-01T00:10:02Z"}]}
-        """.trimIndent()
-
     @Test
     fun `single-report run writes a leak summary next to the input raw report`(
         @TempDir tempDir: Path,
@@ -51,28 +41,6 @@ class AttributionCliTest {
         assertTrue(html.contains("8080"))
         assertTrue(html.contains("com.A"))
         assertTrue(out.text.contains("Wrote leak summary to "), "expected the path to be logged")
-    }
-
-    @Test
-    fun `two-report run intersects candidate sets across runs`(
-        @TempDir tempDir: Path,
-    ) {
-        val r1 = tempDir.resolve("r1.json").toFile().also { it.writeText(standalonePort8080Report) }
-        val r2 = tempDir.resolve("r2.json").toFile().also { it.writeText(secondRunPort8080AttributedToB) }
-        val out = capture()
-
-        val exit = AttributionCli.run(arrayOf(r1.absolutePath, r2.absolutePath), out.stream, capture().stream)
-
-        assertEquals(0, exit)
-        val summary = leakSummaryNextTo(r1)
-        assertTrue(summary != null && summary.exists())
-        // Run 1 attributes 8080 to com.A; run 2 attributes 8080 to com.B; intersection is empty,
-        // so the union (com.A and com.B) is used and the defect indicator fires.
-        val html = summary!!.readText()
-        assertTrue(html.contains("8080"))
-        assertTrue(html.contains("DEFECT"))
-        assertTrue(html.contains("com.A"))
-        assertTrue(html.contains("com.B"))
     }
 
     private fun leakSummaryNextTo(rawReport: File): File? =
@@ -118,14 +86,14 @@ class AttributionCliTest {
     }
 
     @Test
-    fun `more than two positional args exits non-zero`(
+    fun `more than one positional arg exits non-zero`(
         @TempDir tempDir: Path,
     ) {
         val r = tempDir.resolve("r.json").toFile().also { it.writeText(standalonePort8080Report) }
         val err = capture()
-        val exit = AttributionCli.run(arrayOf(r.absolutePath, r.absolutePath, r.absolutePath), capture().stream, err.stream)
+        val exit = AttributionCli.run(arrayOf(r.absolutePath, r.absolutePath), capture().stream, err.stream)
         assertNotEquals(0, exit)
-        assertTrue(err.text.contains("expected 1 or 2"))
+        assertTrue(err.text.contains("expected exactly 1"))
     }
 
     @Test
