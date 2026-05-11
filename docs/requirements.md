@@ -121,15 +121,12 @@ Reliable detection requires that all test classes share one JVM for the duration
 
 Items deferred but documented for future work.
 
-### B1. Stack-trace capture at allocation time
-Capture an allocation stack trace at the moment a resource is created (port open, table create, thread spawn, property set). Implementation: bytecode instrumentation via a Java agent using ASM or ByteBuddy, plus per-resource-type weaving (intercept `ServerSocket` constructors, `Thread.start()`, `System.setProperty`, DDB Local table-create calls, etc.).
+### B1. Thread creation attribution (JFR)
 
-Why valuable: lets us go directly from leak → exact line, bypassing the candidate-set step entirely. Resolves the lazy-allocation case (e.g., a Jetty server started in test A whose `qtp*` expansion threads spawn under load during test B) cleanly.
+The candidate-set approach narrows a thread leak to one or more test classes but does not point to the line of code that created the leaked thread. Stack traces sampled at detection time are not useful (leaked pool workers are parked in `LockSupport.park`); useful stacks must be captured at thread *creation*. JFR's built-in `jdk.ThreadStart` event provides this without bytecode instrumentation.
 
-Not in v1: ship without it; rely on lifecycle-boundary snapshots (REQ-1.2.1) and differential ordering (REQ-2.4) to keep candidate sets small. Revisit when we see how tight the boundary-based sets actually are in practice.
-
-### B2. Maven-plugin wrapper for the orchestrator
-The orchestrator currently ships as a runnable class plus a Bash launcher. A Maven plugin (`mvn com.michaelsgroi.test:junit-leak-detector-orchestrator:run`) would be more idiomatic for Maven users and removes the need to build a classpath manually. Deferred until we have evidence that real users find the runnable-class shape too friction-heavy.
-
-### B3. Cross-run intersection by candidate-class set rather than resource identity
-The attribution module currently intersects two-run leaks by `(resourceType, resourceKey)`. For resource types whose identity is stable across JVMs (system properties, env vars, DDB tables), this works. For thread IDs and ephemeral port numbers, the resource identity differs per run and intersection-by-identity drops these leaks even when both runs implicate the same test class. A better intersection: match leaks across runs by `(resourceType, intersect-of-candidate-classes)` — i.e., if a thread leak in run 1 is attributed to class C, and a thread leak in run 2 is also attributed to class C, treat them as the same leak narrowed to {C} regardless of thread ID. Deferred until we have a concrete need.
+- When enabled, the component starts a JFR recording with the `jdk.ThreadStart` event at suite start (`testPlanExecutionStarted`) and stops/persists it at suite end (`testPlanExecutionFinished`, after the FINAL snapshot). The recording is written to `${report.output.dir}/thread-creations-<ts>.jfr`, where `<ts>` matches the raw report and HTML summary timestamps.
+- Controlled by `thread.creation.tracking.enabled` (default: enabled) and `thread.creation.stack.depth` (default: 30). When `jdk.jfr` is unavailable (e.g., Java 8) or recording start fails, log a single WARN and proceed.
+- Attribution parses the paired `.jfr` file and attaches each leaked thread's creation stack to its `DiscreteLeak`. Lookup is by thread name + thread ID; entries with no match are reported without a creation stack, not dropped.
+- The HTML and text renderers display the creation stack alongside each thread leak when available. HTML uses a collapsible element so the report stays scannable.
+- The attribution CLI accepts `--jfr <path>` to override automatic pairing for users who recorded JFR independently.
