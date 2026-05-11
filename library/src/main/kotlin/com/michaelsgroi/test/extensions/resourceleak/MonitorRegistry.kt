@@ -34,12 +34,7 @@ class MonitorRegistry(
                     }
 
                     ResourceType.MEMORY -> {
-                        numeric.add(
-                            MemoryMonitor(
-                                clock = clock,
-                                growthThresholdBytes = configuration.memoryGrowthThresholdMb * 1024L * 1024L,
-                            ),
-                        )
+                        numeric.add(MemoryMonitor(clock = clock))
                     }
 
                     ResourceType.THREADS -> {
@@ -86,6 +81,22 @@ class MonitorRegistry(
             Snapshot(kind, timestamp, testClass, testMethod, discrete, numeric),
         )
     }
+
+    /**
+     * Sample memory; if it grew past [thresholdBytes] vs [beforeAllBytes], force a GC and resample.
+     * Returns the (possibly post-GC) used-heap value, or `null` if the memory monitor is not active.
+     */
+    fun snapshotMemoryWithGcIfExceeds(
+        beforeAllBytes: Long,
+        thresholdBytes: Long,
+        testClass: String,
+    ): Long? {
+        val mem = numericMonitors.firstOrNull { it is MemoryMonitor } as? MemoryMonitor ?: return null
+        return mem.snapshotWithGcIfExceeds(beforeAllBytes, thresholdBytes, testClass).value
+    }
+
+    /** Sample memory without recording or emitting a snapshot. Used to capture per-class baselines. */
+    fun probeMemory(): Long? = (numericMonitors.firstOrNull { it is MemoryMonitor } as? MemoryMonitor)?.snapshot()?.value
 
     private fun collectDiscrete(record: (ResourceType, Set<ResourceId>) -> Unit): Map<ResourceType, Set<ResourceId>> {
         val out = mutableMapOf<ResourceType, Set<ResourceId>>()

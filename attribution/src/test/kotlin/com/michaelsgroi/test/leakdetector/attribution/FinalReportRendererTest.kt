@@ -63,20 +63,20 @@ class FinalReportRendererTest {
                 memoryLeaks =
                     listOf(
                         MemoryLeak(
-                            baselineBytes = 100 * mb,
-                            finalBytes = 500 * mb,
+                            testClass = "com.B",
+                            classStart = t0,
+                            classEnd = t0.plusSeconds(1),
+                            startBytes = 100 * mb,
+                            endBytes = 500 * mb,
                             growthBytes = 400 * mb,
                             thresholdBytes = 100 * mb,
-                            detectionWindow = DetectionWindow(t0, t0.plusSeconds(1)),
-                            candidateSet = listOf(CandidateClass("com.B", t0, t0.plusSeconds(1))),
-                            emptyCandidateSetDefect = false,
                         ),
                     ),
             )
         val text = FinalReportRenderer.renderText(report)
         assertTrue(text.contains("Memory Leaks:"))
-        assertTrue(text.contains("Baseline: 100 MB"))
-        assertTrue(text.contains("Increase: 400 MB"))
+        assertTrue(text.contains("Start:    100 MB"))
+        assertTrue(text.contains("Growth:   400 MB"))
         assertTrue(text.contains("com.B"))
     }
 
@@ -175,7 +175,7 @@ class FinalReportRendererTest {
                     ),
                 memoryLeaks =
                     listOf(
-                        MemoryLeak(0L, 1L, 1L, 0L, window, listOf(CandidateClass("com.C", t0, t0)), false),
+                        MemoryLeak("com.C", t0, t0, 0L, 1L, 1L, 0L),
                     ),
                 // ports, threads, memory monitored; others not monitored.
                 monitoredTypes = listOf("ports", "threads", "memory"),

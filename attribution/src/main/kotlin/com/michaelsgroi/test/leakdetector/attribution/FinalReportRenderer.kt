@@ -26,19 +26,21 @@ object FinalReportRenderer {
             }
         }
 
-        for (leak in report.memoryLeaks) {
+        if (report.memoryLeaks.isNotEmpty()) {
             sb.appendLine()
             sb.appendLine("Memory Leaks:")
-            sb.appendLine("  - Baseline: ${leak.baselineBytes / BYTES_PER_MB} MB")
-            sb.appendLine("  - Final:    ${leak.finalBytes / BYTES_PER_MB} MB")
-            sb.appendLine("  - Increase: ${leak.growthBytes / BYTES_PER_MB} MB")
-            sb
-                .append("  - Threshold-cross window: [")
-                .append(leak.detectionWindow.lastAbsent ?: "n/a")
-                .append(", ")
-                .append(leak.detectionWindow.firstPresent)
-                .appendLine("]")
-            renderCandidatesText(sb, leak.candidateSet, leak.emptyCandidateSetDefect, indent = "  ")
+            for (leak in report.memoryLeaks) {
+                sb.append("  - Class:    ").appendLine(leak.testClass)
+                sb.append("    Start:    ").append(leak.startBytes / BYTES_PER_MB).appendLine(" MB")
+                sb.append("    End:      ").append(leak.endBytes / BYTES_PER_MB).appendLine(" MB")
+                sb.append("    Growth:   ").append(leak.growthBytes / BYTES_PER_MB).appendLine(" MB")
+                sb
+                    .append("    Lifecycle: [")
+                    .append(leak.classStart)
+                    .append(", ")
+                    .append(leak.classEnd)
+                    .appendLine("]")
+            }
         }
 
         return sb.toString()
@@ -106,28 +108,26 @@ object FinalReportRenderer {
             sb.appendLine("  </table>")
         }
 
-        for (leak in report.memoryLeaks) {
+        if (report.memoryLeaks.isNotEmpty()) {
             sb.append("  <h2 id=\"").append(sectionId("memory")).appendLine("\">Memory Leaks</h2>")
             sb.appendLine("  <table>")
             sb.appendLine(
-                "    <tr><th>Baseline</th><th>Final</th><th>Increase</th>" +
-                    "<th>Threshold-cross Window</th><th>Candidate Set</th></tr>",
+                "    <tr><th>Class</th><th>Start</th><th>End</th><th>Growth</th><th>Lifecycle</th></tr>",
             )
-            sb.appendLine("    <tr class=\"leak-row\">")
-            sb.append("      <td class=\"mono\">").append(leak.baselineBytes / BYTES_PER_MB).appendLine(" MB</td>")
-            sb.append("      <td class=\"mono\">").append(leak.finalBytes / BYTES_PER_MB).appendLine(" MB</td>")
-            sb.append("      <td class=\"mono\">").append(leak.growthBytes / BYTES_PER_MB).appendLine(" MB</td>")
-            sb
-                .append("      <td class=\"mono\">[")
-                .append(htmlEscape(leak.detectionWindow.lastAbsent?.toString() ?: "n/a"))
-                .append(", ")
-                .append(htmlEscape(leak.detectionWindow.firstPresent.toString()))
-                .appendLine("]</td>")
-            sb
-                .append("      <td class=\"candidates\">")
-                .append(renderCandidatesHtml(leak.candidateSet, leak.emptyCandidateSetDefect))
-                .appendLine("</td>")
-            sb.appendLine("    </tr>")
+            for (leak in report.memoryLeaks) {
+                sb.appendLine("    <tr class=\"leak-row\">")
+                sb.append("      <td class=\"mono\">").append(htmlEscape(leak.testClass)).appendLine("</td>")
+                sb.append("      <td class=\"mono\">").append(leak.startBytes / BYTES_PER_MB).appendLine(" MB</td>")
+                sb.append("      <td class=\"mono\">").append(leak.endBytes / BYTES_PER_MB).appendLine(" MB</td>")
+                sb.append("      <td class=\"mono\">").append(leak.growthBytes / BYTES_PER_MB).appendLine(" MB</td>")
+                sb
+                    .append("      <td class=\"mono\">[")
+                    .append(htmlEscape(leak.classStart.toString()))
+                    .append(", ")
+                    .append(htmlEscape(leak.classEnd.toString()))
+                    .appendLine("]</td>")
+                sb.appendLine("    </tr>")
+            }
             sb.appendLine("  </table>")
         }
 

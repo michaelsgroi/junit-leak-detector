@@ -23,13 +23,15 @@ data class DiscreteLeak(
 )
 
 data class MemoryLeak(
-    val baselineBytes: Long,
-    val finalBytes: Long,
+    /** Class blamed for the growth: the one between whose BEFORE_ALL and AFTER_ALL snapshots
+     *  the growth exceeded the threshold. */
+    val testClass: String,
+    val classStart: Instant,
+    val classEnd: Instant,
+    val startBytes: Long,
+    val endBytes: Long,
     val growthBytes: Long,
     val thresholdBytes: Long,
-    val detectionWindow: DetectionWindow,
-    val candidateSet: List<CandidateClass>,
-    val emptyCandidateSetDefect: Boolean,
 )
 
 data class FinalReport(
@@ -53,7 +55,7 @@ object Attribution {
         val lifecycles = report.footer.lifecycles
 
         val discrete = computeDiscreteLeaks(report.snapshots, baseline, final, lifecycles)
-        val memory = computeMemoryLeaks(report.snapshots, baseline, final, lifecycles, memoryGrowthThresholdBytes)
+        val memory = computePerClassMemoryLeaks(report.snapshots, lifecycles, memoryGrowthThresholdBytes)
         return FinalReport(discrete, memory, monitoredTypes = report.header.monitors)
     }
 
@@ -99,30 +101,46 @@ object Attribution {
         return results
     }
 
-    private fun computeMemoryLeaks(
+    /**
+     * Per-class memory attribution: for each test class, find its BEFORE_ALL and AFTER_ALL
+     * snapshots and compute the heap delta. Classes whose net growth exceeds [thresholdBytes]
+     * are reported as memory leaks attributed to that specific class.
+     */
+    private fun computePerClassMemoryLeaks(
         snapshots: List<RawSnapshot>,
-        baseline: RawSnapshot,
-        final: RawSnapshot,
         lifecycles: List<TestClassLifecycleRecord>,
         thresholdBytes: Long,
     ): List<MemoryLeak> {
-        val baselineMem = baseline.numeric["memory"] ?: return emptyList()
-        val finalMem = final.numeric["memory"] ?: return emptyList()
-        val growth = finalMem.value - baselineMem.value
-        if (growth <= thresholdBytes) return emptyList()
-        val window = memoryDetectionWindow(snapshots, baselineMem.value, thresholdBytes, baseline.timestamp)
-        val candidates = candidateSet(window, lifecycles)
-        return listOf(
-            MemoryLeak(
-                baselineBytes = baselineMem.value,
-                finalBytes = finalMem.value,
-                growthBytes = growth,
-                thresholdBytes = thresholdBytes,
-                detectionWindow = window,
-                candidateSet = candidates,
-                emptyCandidateSetDefect = candidates.isEmpty(),
-            ),
-        )
+        val byClass = lifecycles.associateBy { it.testClass }
+        // Pair each class with its BEFORE_ALL/AFTER_ALL snapshots.
+        val befores = mutableMapOf<String, RawSnapshot>()
+        val afters = mutableMapOf<String, RawSnapshot>()
+        for (snap in snapshots) {
+            val cls = snap.testClass ?: continue
+            when (snap.kind) {
+                "BEFORE_ALL" -> befores[cls] = snap
+                "AFTER_ALL" -> afters[cls] = snap
+            }
+        }
+        val out = mutableListOf<MemoryLeak>()
+        for ((cls, lc) in byClass) {
+            val before = befores[cls]?.numeric?.get("memory") ?: continue
+            val after = afters[cls]?.numeric?.get("memory") ?: continue
+            val growth = after.value - before.value
+            if (growth <= thresholdBytes) continue
+            out +=
+                MemoryLeak(
+                    testClass = cls,
+                    classStart = lc.start,
+                    classEnd = lc.end,
+                    startBytes = before.value,
+                    endBytes = after.value,
+                    growthBytes = growth,
+                    thresholdBytes = thresholdBytes,
+                )
+        }
+        // Sort largest-growth first so the most egregious offenders surface at the top.
+        return out.sortedByDescending { it.growthBytes }
     }
 
     private fun detectionWindow(
@@ -141,24 +159,6 @@ object Attribution {
             lastAbsent = snap.timestamp
         }
         // Resource never present in any snapshot - shouldn't happen if final shows it
-        return DetectionWindow(lastAbsent = lastAbsent, firstPresent = lastAbsent ?: baselineTimestamp)
-    }
-
-    private fun memoryDetectionWindow(
-        snapshots: List<RawSnapshot>,
-        baselineBytes: Long,
-        thresholdBytes: Long,
-        baselineTimestamp: Instant,
-    ): DetectionWindow {
-        var lastAbsent: Instant? = baselineTimestamp
-        for (snap in snapshots) {
-            if (snap.kind == "BASELINE") continue
-            val measurement = snap.numeric["memory"] ?: continue
-            if (measurement.value - baselineBytes > thresholdBytes) {
-                return DetectionWindow(lastAbsent = lastAbsent, firstPresent = snap.timestamp)
-            }
-            lastAbsent = snap.timestamp
-        }
         return DetectionWindow(lastAbsent = lastAbsent, firstPresent = lastAbsent ?: baselineTimestamp)
     }
 
@@ -215,13 +215,9 @@ object Attribution {
         run1: List<MemoryLeak>,
         run2: List<MemoryLeak>,
     ): List<MemoryLeak> {
-        if (run1.isEmpty() || run2.isEmpty()) return emptyList()
-        val a = run1.first()
-        val b = run2.first()
-        val intersected = intersectCandidates(a.candidateSet, b.candidateSet)
-        val (final, defect) =
-            if (intersected.isNotEmpty()) intersected to false else unionCandidates(a.candidateSet, b.candidateSet) to true
-        return listOf(a.copy(candidateSet = final, emptyCandidateSetDefect = defect))
+        // Per-class attribution: a class is a real leak only if both runs flagged it.
+        val run2Classes = run2.map { it.testClass }.toSet()
+        return run1.filter { it.testClass in run2Classes }
     }
 
     private fun intersectCandidates(

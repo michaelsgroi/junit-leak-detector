@@ -23,6 +23,7 @@ class ResourceLeakMonitorTestLifecycleExtension(
     // reused for the entire test plan, so this state is naturally scoped to one suite run).
     private var previousClassDelta: Map<ResourceType, Set<ResourceId>>? = null
     private var currentClassBeforeAllProbe: Map<ResourceType, Set<ResourceId>>? = null
+    private var currentClassBeforeAllMemory: Long? = null
 
     override fun beforeAll(extensionContext: ExtensionContext) {
         val testClassName = extensionContext.requiredTestClass.name
@@ -37,11 +38,24 @@ class ResourceLeakMonitorTestLifecycleExtension(
             currentClassBeforeAllProbe = registry.probeDiscrete(SETTLE_TYPES)
         }
         registry?.snapshotAll(kind = SnapshotKind.BEFORE_ALL, testClass = testClassName)
+        // Stash the memory we just sampled so afterAll can decide whether to GC before snapshotting.
+        currentClassBeforeAllMemory = registry?.probeMemory()
     }
 
     override fun afterAll(extensionContext: ExtensionContext) {
         val testClassName = extensionContext.requiredTestClass.name
         val registry = registryProvider()
+        // If memory monitor is active and the class grew past the per-class threshold, GC before
+        // taking the AFTER_ALL snapshot — so the recorded value reflects retained memory, not
+        // transient garbage.
+        currentClassBeforeAllMemory?.let { before ->
+            registry?.snapshotMemoryWithGcIfExceeds(
+                beforeAllBytes = before,
+                thresholdBytes = configuration.memoryGrowthThresholdMb * BYTES_PER_MB,
+                testClass = testClassName,
+            )
+        }
+        currentClassBeforeAllMemory = null
         registry?.snapshotAll(kind = SnapshotKind.AFTER_ALL, testClass = testClassName)
         resourceState.recordTestClassEnd(testClassName, clock.instant())
         if (configuration.preclassSettleEnabled && registry != null) {
@@ -95,5 +109,6 @@ class ResourceLeakMonitorTestLifecycleExtension(
 
     companion object {
         private val SETTLE_TYPES = setOf(ResourceType.THREADS, ResourceType.PORTS)
+        private const val BYTES_PER_MB = 1024L * 1024L
     }
 }

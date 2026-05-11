@@ -169,7 +169,7 @@ class AttributionTest {
             )
         val mem = result.memoryLeaks.single()
         assertEquals(400 * mb, mem.growthBytes)
-        assertEquals(listOf("com.B"), mem.candidateSet.map { it.testClass })
+        assertEquals("com.B", mem.testClass)
     }
 
     @Test

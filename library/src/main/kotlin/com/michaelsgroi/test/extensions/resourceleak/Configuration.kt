@@ -23,7 +23,7 @@ class Configuration(
         get() = read("thread.grace.period.seconds")?.toLong() ?: 10L
 
     val memoryGrowthThresholdMb: Long
-        get() = read("memory.growth.threshold.mb")?.toLong() ?: 1024L
+        get() = read("memory.growth.threshold.mb")?.toLong() ?: 50L
 
     val buildFailureResourceTypes: String
         get() = read("build.failure.resource.types") ?: ""
@@ -69,6 +69,21 @@ class Configuration(
                 ?.filter { it.isNotEmpty() }
                 ?.toSet()
                 ?: emptySet()
+
+    /**
+     * Comma-separated list of `fully.qualified.ClassName#staticMethod` entries to invoke at
+     * suite-end (alongside [SuiteShutdownHook] ServiceLoader entries). Use this when the project
+     * already exposes a static cleanup method (e.g. an embedded server cache shutdown) and you'd
+     * rather point at it from config than ship a separate `SuiteShutdownHook` class + services
+     * file. Each entry must be a static, no-arg method; missing classes are logged and skipped.
+     */
+    val suiteShutdownStaticMethods: List<String>
+        get() =
+            read("suite.shutdown.static.methods")
+                ?.split(",")
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?: emptyList()
 
     private fun read(key: String): String? {
         val systemValue = systemPropertyLookup(SYSTEM_PROPERTY_PREFIX + key)
