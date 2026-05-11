@@ -1,21 +1,40 @@
 package com.michaelsgroi.test.extensions.resourceleak
 
+import org.junit.platform.engine.TestExecutionResult
+import org.junit.platform.engine.support.descriptor.ClassSource
+import org.junit.platform.engine.support.descriptor.MethodSource
 import org.junit.platform.launcher.TestExecutionListener
+import org.junit.platform.launcher.TestIdentifier
 import org.junit.platform.launcher.TestPlan
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.time.Clock
 
-class ResourceLeakMonitor : TestExecutionListener {
+/**
+ * The single integration point with JUnit. Handles suite lifecycle (start/finish) and
+ * per-class / per-method snapshots — replacing the now-removed
+ * `ResourceLeakMonitorTestLifecycleExtension`. Listening at the platform level (rather
+ * than the Jupiter extension level) is what lets consumers skip
+ * `junit.jupiter.extensions.autodetection.enabled=true` in their Surefire config.
+ */
+class ResourceLeakMonitor(
+    private val resourceState: ResourceState = ResourceState.instance,
+    private val clock: Clock = Clock.systemUTC(),
+    private val configuration: Configuration = Configuration.instance,
+    private val settleWaiter: PreclassSettleWaiter = PreclassSettleWaiter.forPreclass(configuration),
+) : TestExecutionListener {
     private var registry: MonitorRegistry? = null
     private var rawReportWriter: RawReportWriter? = null
     private var reportPaths: ReportPaths? = null
-    private val clock: Clock = Clock.systemUTC()
     private val log = LoggerFactory.getLogger(javaClass)
+
+    // Settle-wait state, scoped to one suite run (single listener instance per test plan).
+    private var previousClassDelta: Map<ResourceType, Set<ResourceId>>? = null
+    private var currentClassBeforeAllProbe: Map<ResourceType, Set<ResourceId>>? = null
+    private var currentClassBeforeAllMemory: Long? = null
 
     override fun testPlanExecutionStarted(testPlan: TestPlan) {
         try {
-            val configuration = Configuration.instance
             val startedAt = clock.instant()
             val paths =
                 ReportPaths(
@@ -39,7 +58,6 @@ class ResourceLeakMonitor : TestExecutionListener {
                 snapshotGranularity = configuration.snapshotGranularity,
             )
             r.captureBaseline()
-            SharedMonitorRegistry.set(r)
         } catch (e: IllegalStateException) {
             // JUnit Platform swallows exceptions from this method, so we exit
             // explicitly to ensure a fatal startup error fails the build.
@@ -48,8 +66,108 @@ class ResourceLeakMonitor : TestExecutionListener {
         }
     }
 
+    override fun executionStarted(testIdentifier: TestIdentifier) {
+        classNameOf(testIdentifier)?.let { onClassStart(it) }
+        methodKeyOf(testIdentifier)?.let { onMethodStart(it) }
+    }
+
+    override fun executionFinished(
+        testIdentifier: TestIdentifier,
+        testExecutionResult: TestExecutionResult,
+    ) {
+        // Tear-down order mirrors construction order: per-method first (it's nested inside per-class).
+        methodKeyOf(testIdentifier)?.let { onMethodEnd(it) }
+        classNameOf(testIdentifier)?.let { onClassEnd(it) }
+    }
+
+    override fun executionSkipped(
+        testIdentifier: TestIdentifier,
+        reason: String?,
+    ) {
+        // Skipped descriptors never get executionStarted, so we never recorded a class start.
+        // Nothing to clean up.
+    }
+
+    private fun onClassStart(testClassName: String) {
+        val r = registry
+        if (configuration.preclassSettleEnabled && r != null) {
+            previousClassDelta?.let { delta ->
+                settleWaiter.waitForSettle(delta) { types -> r.probeDiscrete(types) }
+            }
+        }
+        resourceState.recordTestClassStart(testClassName, clock.instant())
+        if (configuration.preclassSettleEnabled && r != null) {
+            currentClassBeforeAllProbe = r.probeDiscrete(SETTLE_TYPES)
+        }
+        r?.snapshotAll(kind = SnapshotKind.BEFORE_ALL, testClass = testClassName)
+        currentClassBeforeAllMemory = r?.probeMemory()
+    }
+
+    private fun onClassEnd(testClassName: String) {
+        val r = registry
+        currentClassBeforeAllMemory?.let { before ->
+            r?.snapshotMemoryWithGcIfExceeds(
+                beforeAllBytes = before,
+                thresholdBytes = configuration.memoryGrowthThresholdMb * BYTES_PER_MB,
+                testClass = testClassName,
+            )
+        }
+        currentClassBeforeAllMemory = null
+        r?.snapshotAll(kind = SnapshotKind.AFTER_ALL, testClass = testClassName)
+        resourceState.recordTestClassEnd(testClassName, clock.instant())
+        if (configuration.preclassSettleEnabled && r != null) {
+            val before = currentClassBeforeAllProbe ?: emptyMap()
+            val after = r.probeDiscrete(SETTLE_TYPES)
+            previousClassDelta = computeDelta(before, after)
+            currentClassBeforeAllProbe = null
+        }
+    }
+
+    private fun onMethodStart(key: TestMethodKey) {
+        if (configuration.snapshotGranularity != SnapshotGranularity.TEST) return
+        resourceState.recordTestMethodStart(key, clock.instant())
+        registry?.snapshotAll(
+            kind = SnapshotKind.BEFORE_EACH,
+            testClass = key.testClassName,
+            testMethod = key.testMethodName,
+        )
+    }
+
+    private fun onMethodEnd(key: TestMethodKey) {
+        if (configuration.snapshotGranularity != SnapshotGranularity.TEST) return
+        registry?.snapshotAll(
+            kind = SnapshotKind.AFTER_EACH,
+            testClass = key.testClassName,
+            testMethod = key.testMethodName,
+        )
+        resourceState.recordTestMethodEnd(key, clock.instant())
+    }
+
+    /**
+     * Returns the FQ class name when [testIdentifier] is a class-boundary container.
+     * The spike at `docs/listener-migration-spike.md` validated that all six Jupiter test
+     * kinds (plain, parameterized, factory, nested, repeated, PER_CLASS) emit a single
+     * `Container + ClassSource` pair bracketing the test class's full execution.
+     */
+    private fun classNameOf(testIdentifier: TestIdentifier): String? {
+        if (!testIdentifier.isContainer) return null
+        val source = testIdentifier.source.orElse(null) as? ClassSource ?: return null
+        return source.className
+    }
+
+    /**
+     * Returns a `(class, method)` key when [testIdentifier] is a per-test-method leaf.
+     * `Test + MethodSource` covers all method-level events across plain, parameterized
+     * (`test-template-invocation:`), factory (`dynamic-test:`), nested, and repeated
+     * (`test-template-invocation:`) — see the spike for details.
+     */
+    private fun methodKeyOf(testIdentifier: TestIdentifier): TestMethodKey? {
+        if (!testIdentifier.isTest) return null
+        val source = testIdentifier.source.orElse(null) as? MethodSource ?: return null
+        return TestMethodKey(source.className, source.methodName)
+    }
+
     override fun testPlanExecutionFinished(testPlan: TestPlan) {
-        val configuration = Configuration.instance
         val r = registry
 
         // Run suite-shared shutdown hooks (e.g., SpringContextShutdownHook) so threads
@@ -72,26 +190,28 @@ class ResourceLeakMonitor : TestExecutionListener {
         }
 
         registry?.snapshotAll(kind = SnapshotKind.FINAL)
-        SharedMonitorRegistry.clear()
         rawReportWriter?.closeWith(
             finishedAt = clock.instant(),
-            lifecycles = ResourceState.instance.getAllTestClassLifecycles(),
+            lifecycles = resourceState.getAllTestClassLifecycles(),
         )
         reportPaths?.let { AttributionRunner(reportPaths = it).runInline() }
     }
-}
 
-internal object SharedMonitorRegistry {
-    @Volatile
-    private var current: MonitorRegistry? = null
-
-    fun set(registry: MonitorRegistry) {
-        current = registry
+    private fun computeDelta(
+        before: Map<ResourceType, Set<ResourceId>>,
+        after: Map<ResourceType, Set<ResourceId>>,
+    ): Map<ResourceType, Set<ResourceId>> {
+        val out = mutableMapOf<ResourceType, Set<ResourceId>>()
+        for ((type, afterIds) in after) {
+            val beforeIds = before[type] ?: emptySet()
+            val appeared = afterIds - beforeIds
+            if (appeared.isNotEmpty()) out[type] = appeared
+        }
+        return out
     }
 
-    fun clear() {
-        current = null
+    companion object {
+        private val SETTLE_TYPES = setOf(ResourceType.THREADS, ResourceType.PORTS)
+        private const val BYTES_PER_MB = 1024L * 1024L
     }
-
-    fun get(): MonitorRegistry? = current
 }
