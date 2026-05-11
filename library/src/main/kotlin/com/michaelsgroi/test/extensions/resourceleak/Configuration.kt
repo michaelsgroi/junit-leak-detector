@@ -55,6 +55,21 @@ class Configuration(
     val finalSettlePollIntervalSeconds: Long
         get() = read("final.settle.poll.interval.seconds")?.toLong() ?: 1L
 
+    /**
+     * Comma-separated list of system property names to exclude from leak detection. Useful for
+     * framework globals that are set once during init (Spring Boot's `PID`, `APPLICATION_NAME`,
+     * `CONSOLE_LOG_CHARSET`; Jetty's `jetty.git.hash`; AWS SDK's `aws.accessKeyId`; log4j2's
+     * `log4j2.discardThreshold`; etc.) — these are documented framework contracts, not test bugs.
+     */
+    val ignoredSystemProperties: Set<String>
+        get() =
+            read("systemprops.ignored")
+                ?.split(",")
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?.toSet()
+                ?: emptySet()
+
     private fun read(key: String): String? {
         val systemValue = systemPropertyLookup(SYSTEM_PROPERTY_PREFIX + key)
         if (!systemValue.isNullOrBlank()) {

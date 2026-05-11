@@ -26,7 +26,7 @@ class MonitorRegistry(
             types.forEach { type ->
                 when (type) {
                     ResourceType.SYSTEM_PROPS -> {
-                        discrete.add(SystemPropertyMonitor())
+                        discrete.add(SystemPropertyMonitor(configuration.ignoredSystemProperties))
                     }
 
                     ResourceType.ENV_VARS -> {
@@ -34,7 +34,12 @@ class MonitorRegistry(
                     }
 
                     ResourceType.MEMORY -> {
-                        numeric.add(MemoryMonitor(clock))
+                        numeric.add(
+                            MemoryMonitor(
+                                clock = clock,
+                                growthThresholdBytes = configuration.memoryGrowthThresholdMb * 1024L * 1024L,
+                            ),
+                        )
                     }
 
                     ResourceType.THREADS -> {
