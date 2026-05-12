@@ -1,58 +1,41 @@
 package com.michaelsgroi.test.extensions.resourceleak
 
-import org.slf4j.LoggerFactory
 import java.time.Clock
+import java.time.Duration
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Used-heap monitor (`totalMemory - freeMemory`).
  *
- * The lifecycle extension calls [snapshotWithGcIfExceeds] from `afterAll` so the recorded
- * AFTER_ALL value reflects retained memory, not transient short-lived garbage. The growth
- * threshold is per-class (AFTER_ALL minus BEFORE_ALL), matching the attribution logic in
- * `Attribution.computeMemoryLeaks`.
+ * The listener calls [snapshotAfterGc] at both class-start and class-end so BEFORE_ALL and
+ * AFTER_ALL values reflect retained memory rather than transient garbage. `System.gc()` is
+ * a hint, but on HotSpot it generally completes within milliseconds and is sufficient to
+ * make per-class growth comparable. Total time spent in GC across the suite is tracked by
+ * [totalGcDuration] and logged at suite-end.
  */
 class MemoryMonitor(
     private val clock: Clock = Clock.systemUTC(),
     private val gc: () -> Unit = { System.gc() },
 ) : NumericResourceMonitor {
+    private val totalGcNanos = AtomicLong(0)
+    private val gcCallCount = AtomicLong(0)
+
     override fun snapshot(): NumericResourceMeasurement = NumericResourceMeasurement(value = usedHeap(), timestamp = clock.instant())
 
-    /**
-     * Sample heap; if it grew beyond [thresholdBytes] vs [beforeAllBytes], force a GC and resample.
-     * Returns the post-GC measurement so the caller can record it as the AFTER_ALL snapshot.
-     */
-    fun snapshotWithGcIfExceeds(
-        beforeAllBytes: Long,
-        thresholdBytes: Long,
-        testClass: String,
-    ): NumericResourceMeasurement {
-        val raw = usedHeap()
-        if (raw - beforeAllBytes >= thresholdBytes) {
-            log.info(
-                "MemoryMonitor: {} grew {} MB (>= {} MB threshold); forcing GC",
-                testClass,
-                (raw - beforeAllBytes) / BYTES_PER_MB,
-                thresholdBytes / BYTES_PER_MB,
-            )
-            gc()
-            val post = usedHeap()
-            log.info(
-                "MemoryMonitor: {} post-GC growth: {} MB",
-                testClass,
-                (post - beforeAllBytes) / BYTES_PER_MB,
-            )
-            return NumericResourceMeasurement(value = post, timestamp = clock.instant())
-        }
-        return NumericResourceMeasurement(value = raw, timestamp = clock.instant())
+    /** Force a GC and sample retained heap. Records the GC's wall-clock duration. */
+    fun snapshotAfterGc(): NumericResourceMeasurement {
+        val start = System.nanoTime()
+        gc()
+        totalGcNanos.addAndGet(System.nanoTime() - start)
+        gcCallCount.incrementAndGet()
+        return NumericResourceMeasurement(value = usedHeap(), timestamp = clock.instant())
     }
+
+    val totalGcDuration: Duration get() = Duration.ofNanos(totalGcNanos.get())
+    val gcInvocationCount: Long get() = gcCallCount.get()
 
     private fun usedHeap(): Long {
         val runtime = Runtime.getRuntime()
         return runtime.totalMemory() - runtime.freeMemory()
-    }
-
-    companion object {
-        private val log = LoggerFactory.getLogger(MemoryMonitor::class.java)
-        private const val BYTES_PER_MB = 1024L * 1024L
     }
 }
