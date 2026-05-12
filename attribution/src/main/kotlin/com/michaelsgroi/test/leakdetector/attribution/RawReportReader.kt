@@ -38,6 +38,7 @@ object RawReportReader {
             startedAt = Instant.parse(obj.string("startedAt")),
             monitors = obj.array("monitors").items.map { it.asString() },
             snapshotGranularity = obj.string("snapshotGranularity"),
+            memoryGrowthThresholdBytes = obj.stringOrNull("memoryGrowthThresholdBytes")?.toLong() ?: 0L,
         )
 
     private fun parseFooter(obj: JsonValue.JsonObject) =

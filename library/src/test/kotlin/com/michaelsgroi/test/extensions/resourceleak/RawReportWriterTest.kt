@@ -23,6 +23,7 @@ class RawReportWriterTest {
             startedAt = started,
             monitors = listOf("threads"),
             snapshotGranularity = SnapshotGranularity.CLASS,
+            memoryGrowthThresholdBytes = 0L,
         )
         writer.appendSnapshot(
             Snapshot(
@@ -63,7 +64,7 @@ class RawReportWriterTest {
         )
         assertEquals(false, outputFile.exists())
 
-        writer.open(Instant.EPOCH, emptyList(), SnapshotGranularity.CLASS)
+        writer.open(Instant.EPOCH, emptyList(), SnapshotGranularity.CLASS, memoryGrowthThresholdBytes = 0L)
         writer.closeWith(Instant.EPOCH, emptyMap())
 
         // After close: appending should not reopen the file.
@@ -80,7 +81,7 @@ class RawReportWriterTest {
     ) {
         val nested: File = tempDir.resolve("a/b/c/raw.json").toFile()
         val writer = RawReportWriter(nested)
-        writer.open(Instant.EPOCH, emptyList(), SnapshotGranularity.CLASS)
+        writer.open(Instant.EPOCH, emptyList(), SnapshotGranularity.CLASS, memoryGrowthThresholdBytes = 0L)
         writer.closeWith(Instant.EPOCH, emptyMap())
         assertTrue(nested.exists())
     }

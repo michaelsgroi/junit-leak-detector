@@ -108,7 +108,7 @@ class MonitorRegistryTest {
     ) {
         val outputFile = tempDir.resolve("raw.json").toFile()
         val writer = RawReportWriter(outputFile, runId = "r")
-        writer.open(java.time.Instant.EPOCH, listOf("systemprops"), SnapshotGranularity.CLASS)
+        writer.open(java.time.Instant.EPOCH, listOf("systemprops"), SnapshotGranularity.CLASS, memoryGrowthThresholdBytes = 0L)
         val state = ResourceState()
         val clock = TestClock(0L)
         val registry =

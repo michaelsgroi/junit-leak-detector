@@ -97,6 +97,33 @@ class AttributionCliTest {
     }
 
     @Test
+    fun `memory threshold defaults to value recorded in the raw report header`(
+        @TempDir tempDir: Path,
+    ) {
+        val mb = 1_048_576L
+        val raw =
+            """
+            {"type":"header","runId":"r","startedAt":"2024-01-01T00:00:00Z","monitors":["memory"],"snapshotGranularity":"class","memoryGrowthThresholdBytes":"${100 * mb}"}
+            {"type":"snapshot","kind":"BASELINE","timestamp":"2024-01-01T00:00:00Z","testClass":null,"testMethod":null,"discrete":{},"numeric":{"memory":{"value":"${100 * mb}","timestamp":"2024-01-01T00:00:00Z"}}}
+            {"type":"snapshot","kind":"BEFORE_ALL","timestamp":"2024-01-01T00:00:01Z","testClass":"com.A","testMethod":null,"discrete":{},"numeric":{"memory":{"value":"${100 * mb}","timestamp":"2024-01-01T00:00:01Z"}}}
+            {"type":"snapshot","kind":"AFTER_ALL","timestamp":"2024-01-01T00:00:02Z","testClass":"com.A","testMethod":null,"discrete":{},"numeric":{"memory":{"value":"${150 * mb}","timestamp":"2024-01-01T00:00:02Z"}}}
+            {"type":"snapshot","kind":"FINAL","timestamp":"2024-01-01T00:00:03Z","testClass":null,"testMethod":null,"discrete":{},"numeric":{"memory":{"value":"${150 * mb}","timestamp":"2024-01-01T00:00:03Z"}}}
+            {"type":"footer","finishedAt":"2024-01-01T00:00:04Z","lifecycles":[{"testClass":"com.A","start":"2024-01-01T00:00:01Z","end":"2024-01-01T00:00:02Z"}]}
+            """.trimIndent()
+        val report = tempDir.resolve("raw.json").toFile().also { it.writeText(raw) }
+
+        val exit = AttributionCli.run(arrayOf(report.absolutePath), capture().stream, capture().stream)
+
+        assertEquals(0, exit)
+        val summary = leakSummaryNextTo(report)!!
+        // Per-class growth (50 MB) is below the header's 100 MB threshold, so the
+        // standalone CLI should produce no Memory Leaks rows in the report.
+        val html = summary.readText()
+        assertTrue(html.contains("<td>Memory Leaks</td><td class=\"mono\">0</td>"), html)
+        assertFalse(html.contains("com.A"), html)
+    }
+
+    @Test
     fun `memory threshold flag suppresses memory leaks below the threshold`(
         @TempDir tempDir: Path,
     ) {

@@ -29,7 +29,7 @@ class AttributionRunnerTest {
 
     private fun writeRawReportWithPortLeak(file: File) {
         val writer = RawReportWriter(file, runId = "r")
-        writer.open(Instant.parse("2024-01-01T00:00:00Z"), listOf("ports"), SnapshotGranularity.CLASS)
+        writer.open(Instant.parse("2024-01-01T00:00:00Z"), listOf("ports"), SnapshotGranularity.CLASS, memoryGrowthThresholdBytes = 0L)
         writer.appendSnapshot(
             Snapshot(
                 kind = SnapshotKind.BASELINE,

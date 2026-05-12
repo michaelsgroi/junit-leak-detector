@@ -64,6 +64,7 @@ class ResourceLeakMonitor(
                         .map { it.trim() }
                         .filter { it.isNotEmpty() },
                 snapshotGranularity = configuration.snapshotGranularity,
+                memoryGrowthThresholdBytes = configuration.memoryGrowthThresholdMb * BYTES_PER_MB,
             )
             r.captureBaseline()
             // Start JFR recording for thread-creation tracking. Must be after baseline so
@@ -238,5 +239,6 @@ class ResourceLeakMonitor(
 
     companion object {
         private val SETTLE_TYPES = setOf(ResourceType.THREADS, ResourceType.PORTS)
+        private const val BYTES_PER_MB = 1024L * 1024L
     }
 }

@@ -56,9 +56,12 @@ object AttributionCli {
             autoPairedJfr(parsed.rawReport)
                 ?.let { ThreadCreationIndex.parse(it) }
                 ?: ThreadCreationIndex.EMPTY
+        // CLI flag wins; otherwise fall back to the threshold the run itself recorded
+        // in the raw-report header so the standalone HTML matches the inline report.
+        val thresholdBytes = parsed.memoryGrowthThresholdBytes ?: report.header.memoryGrowthThresholdBytes
         return Attribution.attributeSingleRun(
             report = report,
-            memoryGrowthThresholdBytes = parsed.memoryGrowthThresholdBytes,
+            memoryGrowthThresholdBytes = thresholdBytes,
             threadCreationIndex = threadCreations,
         )
     }
@@ -82,7 +85,7 @@ object AttributionCli {
         }
 
         val positional = mutableListOf<String>()
-        var memoryThresholdMb: Long = 0L
+        var memoryThresholdMb: Long? = null
         var i = 0
         while (i < args.size) {
             when (val arg = args[i]) {
@@ -124,7 +127,7 @@ object AttributionCli {
         }
         return ParsedArgs(
             rawReport = rawReport,
-            memoryGrowthThresholdBytes = memoryThresholdMb * BYTES_PER_MB,
+            memoryGrowthThresholdBytes = memoryThresholdMb?.let { it * BYTES_PER_MB },
         )
     }
 
@@ -142,7 +145,8 @@ object AttributionCli {
             timestamp), thread leaks include the creation stack of each leaked thread.
 
             Options:
-              --memory-threshold-mb <n>     Memory growth threshold in MB (default: 0)
+              --memory-threshold-mb <n>     Memory growth threshold in MB (default: value
+                                            recorded in the raw report header, or 0 if absent)
               -h, --help                    Show this help
             """.trimIndent(),
         )
@@ -154,7 +158,8 @@ object AttributionCli {
 
     private data class ParsedArgs(
         val rawReport: File,
-        val memoryGrowthThresholdBytes: Long,
+        /** `null` means "use the threshold recorded in the raw report header". */
+        val memoryGrowthThresholdBytes: Long?,
     )
 
     private const val USAGE_EXIT_CODE = 2
