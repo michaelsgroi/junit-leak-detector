@@ -6,7 +6,7 @@
 
 The Resource Leak Detector monitors and reports resource leaks in unit tests, tracking network ports, threads, system properties, environment variables, memory usage, and DynamoDB Local tables.
 
-Resource snapshots are captured **at JUnit lifecycle boundaries only** — never via scheduled wall-clock polling. The component uses JUnit Platform's `TestExecutionListener` API for global test-plan lifecycle (suite start/end) and a globally-registered JUnit Jupiter `Extension` for per-class and per-test lifecycle (`BeforeAllCallback`, `BeforeEachCallback`, `AfterEachCallback`, `AfterAllCallback`).
+Resource snapshots are captured **at JUnit lifecycle boundaries only** — never via scheduled wall-clock polling. The component uses JUnit Platform's `TestExecutionListener` API for the entire lifecycle: suite start/end via `testPlanExecutionStarted` / `testPlanExecutionFinished`, and class / method boundaries via `executionStarted` / `executionFinished` events whose `TestIdentifier` is a Container with a `ClassSource` (class) or a Test with a `MethodSource` (method).
 
 The component is split into two independent pieces (per the Architecture section of the requirements):
 
@@ -53,36 +53,19 @@ The Resource Leak Detector is maintained in its own standalone codebase, separat
 
 Auto-registration with JUnit means consumers do not need to modify test code:
 
-* `ResourceLeakMonitor` (the `TestExecutionListener`) is discovered via `META-INF/services/org.junit.platform.launcher.TestExecutionListener`.
-* `ResourceLeakMonitorTestLifecycleExtension` (the JUnit Jupiter `Extension`) is discovered via `META-INF/services/org.junit.jupiter.api.extension.Extension` (with `junit.jupiter.extensions.autodetection.enabled=true` set in the consuming project's Surefire configuration).
+* `ResourceLeakMonitor` (the `TestExecutionListener`) is discovered via `META-INF/services/org.junit.platform.launcher.TestExecutionListener`. No `junit.jupiter.extensions.autodetection.enabled=true` flag is required.
 
-Configuration is supplied by the consuming project via a properties file on the test classpath, with optional system property overrides (see [Configuration](#configuration)). The artifact contains no consumer-specific references.
+Configuration is supplied by the consuming project via Surefire `<systemPropertyVariables>` of the form `resource.leak.detector.<key>` (see [Configuration](#configuration)). The artifact contains no consumer-specific references.
 
-To fully disable the Resource Leak Detector with zero runtime overhead, the consuming project omits (or comments out) the Maven dependency. With the JAR off the test classpath, ServiceLoader discovers nothing, no classes from the library are loaded, and no hooks fire.
+To fully disable the Resource Leak Detector at runtime without removing the dependency, set `resource.leak.detector.disabled=true`. To remove it entirely, omit the Surefire `<dependencies>` entry — with the JAR off the test classpath, ServiceLoader discovers nothing, no classes from the library are loaded, and no hooks fire.
 
 ## Test-isolation Prerequisites
 
-Reliable detection requires every test class in the suite to share one JVM. With `forkCount` > 1 or `reuseForks=false`, each fork starts clean and cross-class sticky leaks become invisible. Consumers MUST configure Surefire with `forkCount=1`, `reuseForks=true`, and `junit.jupiter.extensions.autodetection.enabled=true`.
+Thorough detection requires every test class in the suite to share one JVM. Surefire's defaults (`forkCount=1`, `reuseForks=true`) already satisfy this; explicit override (e.g., parallelizing with `forkCount > 1` or `reuseForks=false`) degrades the signal but does not break it.
 
-### Runtime fork-detection
+Under multi-fork the detector still works correctly within each fork. A leak that appears between two classes in the same fork is detected and attributed normally; a leak that would have appeared between a class in fork-A and a class in fork-B is invisible (false negative). The detector never produces false positives because of multi-fork — each fork takes its own BASELINE/FINAL within its own JVM and never blames an innocent class.
 
-Static parsing of `pom.xml` is explicitly out of scope. Profile-resolved Surefire configuration cannot be reliably reproduced from inside the test JVM (profiles, system-property overrides, plugin inheritance), and a partial parser would produce both false positives and false negatives.
-
-Instead, the component performs a **runtime fork-detection check** in `ResourceLeakMonitor.testPlanExecutionStarted`:
-
-1. Write a per-fork marker file to `target/resource-leak-detector/forks/<pid>.marker` containing the current JVM PID and start timestamp.
-2. List existing `*.marker` files in the same directory. Any markers older than the current JVM start (within a recent window, e.g., 5 minutes) suggest a prior fork of the same `mvn test` invocation has already run — i.e., `forkCount > 1` or `reuseForks=false`.
-3. If prior markers are observed, log at WARN naming the suspected misconfiguration (`forkCount` > 1 or `reuseForks=false`) and the implication (cross-class leaks will be invisible or under-attributed). The component does NOT refuse to run; it proceeds and reports what it can.
-4. The marker directory is cleared at the start of each test plan when no prior markers are present (i.e., on the first fork), so stale markers from previous days don't trigger false warnings.
-
-This catches the actual failure mode (multiple JVMs servicing one test plan) without relying on accurate static analysis. The warning fires after the first misconfigured fork has already run; the user can fix the configuration and re-run.
-
-### Documentation
-
-User-facing documentation MUST include:
-
-- An example Surefire snippet that sets `forkCount=1`, `reuseForks=true`, and `junit.jupiter.extensions.autodetection.enabled=true`.
-- A description of the runtime fork-detection warning and how to fix the underlying configuration.
+The detector does not attempt to detect or warn about multi-fork at runtime: the warning was a nag that fired on perfectly valid `forkCount=2` configs, and cross-fork detection isn't fixable from inside a fork JVM anyway. User-facing documentation should mention the trade-off so consumers parallelizing tests understand what they're losing.
 
 ## C1 — Test Runner + Raw Report
 
@@ -90,22 +73,17 @@ User-facing documentation MUST include:
 
 **ResourceLeakMonitor**
 
-JUnit Platform `TestExecutionListener` that orchestrates suite-level lifecycle.
+JUnit Platform `TestExecutionListener` that orchestrates the entire lifecycle (suite, class, and method) from a single integration point.
 
-* Registered globally via `META-INF/services/org.junit.platform.launcher.TestExecutionListener`.
-* In `testPlanExecutionStarted`: writes the per-fork marker (see [Runtime fork-detection](#runtime-fork-detection-standalone-library-use)), initializes `ResourceState`, and triggers the **baseline snapshot** (each enabled monitor captures its current state — these resources are excluded from leak detection).
-* In `testPlanExecutionFinished`: triggers the **final snapshot**, then writes the raw report to disk and invokes the attribution component (C2).
+* Registered globally via `META-INF/services/org.junit.platform.launcher.TestExecutionListener`. Auto-loads — consumers do **not** need `junit.jupiter.extensions.autodetection.enabled=true`.
+* In `testPlanExecutionStarted`: initializes `ResourceState`, triggers the **baseline snapshot** (each enabled monitor captures its current state — these resources are excluded from leak detection), and starts a JFR thread-creation recording (see [Thread Creation Attribution](#thread-creation-attribution-jfr)) when `thread.creation.tracking.enabled=true`.
+* In `executionStarted(testIdentifier)` / `executionFinished(testIdentifier, result)`: detects per-class boundaries (Container + `ClassSource`) and per-test boundaries (Test + `MethodSource`). Per-class boundaries always take snapshots; per-test boundaries take snapshots only when `snapshot.granularity=test` is configured. The mapping covers plain `@Test`, `@ParameterizedTest`, `@TestFactory`, `@Nested`, `@RepeatedTest`, and `@TestInstance(PER_CLASS)`.
+* Stores per-class lifecycle intervals in `ResourceState`. Per-test intervals are also stored when `snapshot.granularity=test`.
+* When `preclass.settle.enabled=true`, the per-class start handler performs the pre-class settle wait described in [Pre-class settle wait](#pre-class-settle-wait) before recording the boundary timestamp and snapshot.
+* When `disabled=true` (the master kill switch), the listener short-circuits at suite start and every subsequent callback no-ops. No marker files, no monitors, no snapshots, no report. Allows consumers to keep the dep on the classpath without paying any runtime cost.
+* In `testPlanExecutionFinished`: runs suite-shared shutdown hooks (e.g., `SpringContextShutdownHook`), waits for the optional final settle, triggers the **final snapshot**, stops the JFR recording, writes the raw report to disk, and invokes the attribution component (C2).
 
-**ResourceLeakMonitorTestLifecycleExtension**
-
-JUnit Jupiter `Extension` that drives per-class (default) or per-test (opt-in) snapshots.
-
-* Implements all four callbacks: `BeforeAllCallback`, `BeforeEachCallback`, `AfterEachCallback`, `AfterAllCallback`.
-* Only the `BeforeAll` and `AfterAll` callbacks take snapshots by default. The `BeforeEach`/`AfterEach` callbacks take snapshots only when `snapshot.granularity=test` is configured (see [Configuration](#configuration)). Per-test mode is opt-in because per-test snapshots multiply snapshot work by the average number of methods per class.
-* Registered globally via `META-INF/services/org.junit.jupiter.api.extension.Extension`. Service-loader discovery means it applies to all test classes without `@ExtendWith` on individual tests.
-* On each active callback, the extension records a timestamp and asks every enabled monitor to take a snapshot. Snapshots run synchronously in the test thread so they complete before the test or teardown proceeds.
-* Stores per-class lifecycle intervals (`start` = `BeforeAll` time, `end` = `AfterAll` time) in `ResourceState`. Per-test intervals are also stored when `snapshot.granularity=test`.
-* When `preclass.settle.enabled=true`, the `BeforeAllCallback` performs the pre-class settle wait described in [Pre-class settle wait](#pre-class-settle-wait) before recording the boundary timestamp and snapshot.
+There is no separate Jupiter `Extension` class. Earlier versions split the work between a Platform listener and a Jupiter `Extension`; the listener-only design eliminates the autodetection-flag requirement.
 
 **ResourceState**
 
@@ -160,11 +138,11 @@ For DynamoDB Local tables, a leak is declared if a table exists in the final sna
 
 When `preclass.settle.enabled=true` the extension waits for slow-to-release resources from the previous test class to clear before snapshotting at the next class's `BeforeAllCallback`. Threads and listening ports often take observable time to release after a class ends; without this wait, the next class's BeforeAll snapshot still shows them and widens the candidate set unnecessarily.
 
-**State carried forward.** After each `AfterAllCallback`, the extension records, per applicable monitor (threads, ports), the **delta set**: resources present in the AfterAll snapshot but absent from the matching BeforeAll snapshot. This is the set of resources that appeared *during* that class. Only the immediately-previous class's delta is retained; older classes' deltas are discarded.
+**State carried forward.** After each per-class end boundary, the listener records, per applicable monitor (threads, ports), the **delta set**: resources present in the per-class-end snapshot but absent from the matching per-class-start snapshot. This is the set of resources that appeared *during* that class. Only the immediately-previous class's delta is retained; older classes' deltas are discarded.
 
-The delta lives as a private mutable field on `ResourceLeakMonitorTestLifecycleExtension`, not in `ResourceState`. JUnit Jupiter's ServiceLoader-discovered extensions are instantiated once per JVM test run (the engine's root extension registry holds a single instance and child registries inherit from it), so a private field on the extension naturally scopes the carry-over state to "this test run" and is reset by JVM lifetime. Under the default sequential execution model, callbacks for different classes do not overlap, so no synchronization is needed; if parallel test execution were ever enabled this state would need to move to a context-keyed store.
+The delta lives as a private mutable field on `ResourceLeakMonitor`. The Platform's ServiceLoader instantiates a listener once per JVM test plan, so a private field naturally scopes the carry-over state to "this test run" and resets at JVM lifetime. Under the default sequential execution model, callbacks for different classes do not overlap, so no synchronization is needed; if parallel test execution were ever enabled this state would need to move to a context-keyed store.
 
-**Wait algorithm at `BeforeAllCallback`** (when enabled and a previous-class delta exists):
+**Wait algorithm at the per-class start boundary** (when enabled and a previous-class delta exists):
 
 1. For each applicable monitor, compute `carryover = previousClassDelta ∩ currentSnapshot`. Resources in the previous-class delta but no longer present have already settled.
 2. If `carryover` is empty for all monitors, proceed without waiting.
@@ -326,44 +304,59 @@ data class NumericResourceMeasurement(
 )
 ```
 
-### Optional metadata: thread stack traces
+### Thread Creation Attribution (JFR)
 
-For thread leaks, `ThreadMonitor` may attach the thread's current stack trace (`Thread.getAllStackTraces()`) at the snapshot in which the thread first appeared, as descriptive metadata on the leak entry. This is reporting-only and does not influence candidate set computation. For all other resource types, no creator stack trace is captured today; see the Backlog section for the planned allocation-time stack-trace capture.
+For thread leaks, the listener captures a JFR recording covering the entire test plan with `jdk.ThreadStart` events enabled. At suite end, the recording is dumped to `${report.output.dir}/thread-creations-<ts>.jfr` paired with the raw report and HTML summary by timestamp.
+
+The attribution module's `ThreadCreationIndex` parses the recording and indexes events by `(threadName, javaThreadId)` → call-site stack frames. When `Attribution.attributeSingleRun` produces a `DiscreteLeak` for a thread, it looks the thread up in the index and attaches the creation stack to the leak. The HTML renderer shows the stack inside a collapsible `<details>` block; the text renderer appends a "Created at:" block.
+
+Both the inline `AttributionRunner` (library) and the standalone `AttributionCli` auto-pair the `.jfr` file by deriving its name from the raw report's timestamp. No JVM flag is required (the recording is started programmatically via `jdk.jfr.Recording`); on JDKs without `jdk.jfr` the feature silently no-ops with a single WARN.
 
 ## Configuration
 
-Configuration values are owned by the consuming project. They are read at startup from `resource-leak-detector.properties` on the test classpath, with optional system property overrides of the form `resource.leak.detector.<key>`.
+Configuration is read exclusively from system properties of the form `resource.leak.detector.<key>`, set via Surefire's `<systemPropertyVariables>` block alongside the dependency injection. There is **no** properties-file mechanism — one config source, one location.
 
-```properties
-# Resource selection
-monitored.resource.types=ports,threads,memory
+A consumer who doesn't want to override anything writes nothing; the built-in defaults produce a working detector. The end-state consumer pom is just:
 
-# Detection thresholds
-memory.growth.threshold.mb=50
+```xml
+<plugin>
+    <artifactId>maven-surefire-plugin</artifactId>
+    <dependencies>
+        <dependency>
+            <groupId>com.michaelsgroi.test</groupId>
+            <artifactId>junit-leak-detector</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+    </dependencies>
+</plugin>
+```
 
-# Build failure
-build.failure.resource.types=
+Overrides go in the same `<plugin>` block:
 
-snapshot.granularity=class   # class = BeforeAll/AfterAll only; test = also BeforeEach/AfterEach
-
-# Pre-class settle wait
-preclass.settle.enabled=false
-preclass.settle.max.seconds=10
-preclass.settle.poll.interval.seconds=1
+```xml
+<configuration>
+    <systemPropertyVariables>
+        <resource.leak.detector.build.failure.resource.types>ports,threads</resource.leak.detector.build.failure.resource.types>
+        <resource.leak.detector.memory.growth.threshold.mb>100</resource.leak.detector.memory.growth.threshold.mb>
+    </systemPropertyVariables>
+</configuration>
 ```
 
 | Key | Default | Notes |
 |---|---|---|
-| `monitored.resource.types` | (empty) | Comma-separated. Valid: `ports`, `threads`, `systemprops`, `envvars`, `memory`, `ddbtables`. |
+| `disabled` | `false` | Master kill switch. When `true`, the listener short-circuits at suite start; no marker files, no monitors, no snapshots, no report. |
+| `monitored.resource.types` | `ports,threads,systemprops,envvars,memory` | Comma-separated. Valid values include the default plus `ddbtables` (opt-in; requires the AWS SDK on the test classpath). |
 | `memory.growth.threshold.mb` | `50` | Per-class heap growth threshold. |
 | `build.failure.resource.types` | (empty) | Comma-separated list of resource types whose leaks fail the build. Empty = build never fails. |
-| `snapshot.granularity` | `class` | `class` = snapshots at `BeforeAllCallback`/`AfterAllCallback` only. `test` = also at `BeforeEachCallback`/`AfterEachCallback` for fine-grained debugging at the cost of ~Nx more snapshot operations. |
-| `preclass.settle.enabled` | `false` | When `true`, the extension waits for threads/ports that appeared during the previous class to clear before snapshotting at the next class's `BeforeAll`. |
+| `snapshot.granularity` | `class` | `class` = per-class boundaries only. `test` = also per-test boundaries (parameterized invocations, dynamic tests, repeated tests, nested-class tests) for fine-grained debugging at the cost of ~Nx more snapshot operations. |
+| `preclass.settle.enabled` | `false` | When `true`, the listener waits for threads/ports that appeared during the previous class to clear before snapshotting at the next class's start boundary. |
 | `preclass.settle.max.seconds` | `10` | Maximum total time to wait for carry-over resources to clear. |
 | `preclass.settle.poll.interval.seconds` | `1` | Poll interval while waiting. |
-| `report.output.dir` | the JVM's working directory | Directory where `raw-report-<ts>.json` and `leak-summary-<ts>.html` are written. Both files share the same ISO-8601-seconds timestamp suffix. |
-
-When the Maven dependency is commented out to disable the component, the properties file remains on disk unused.
+| `final.settle.enabled` | `true` | When `true`, after running suite-shared shutdown hooks the listener waits for threads/ports to drain before taking the FINAL snapshot. |
+| `final.settle.max.seconds` | `90` | Maximum total time to wait at the FINAL boundary. |
+| `thread.creation.tracking.enabled` | `true` | When `true`, the listener captures `jdk.ThreadStart` events via JFR so attribution can show each leaked thread's creation stack. |
+| `thread.creation.stack.depth` | `30` | Stack depth captured per `jdk.ThreadStart` event. |
+| `report.output.dir` | `target/resource-leak-detector` | Directory where `raw-report-<ts>.json`, `leak-summary-<ts>.html`, and `thread-creations-<ts>.jfr` are written. All three files share the same ISO-8601-seconds timestamp suffix. |
 
 ## Appendix
 
@@ -410,12 +403,9 @@ Memory Leaks:
 
 ### FAQ
 
-**Why both `TestExecutionListener` and `Extension`?**
+**Why a Platform `TestExecutionListener` rather than a Jupiter `Extension`?**
 
-* `TestExecutionListener` (JUnit Platform): platform-level, sees the entire test plan across all engines. Provides `testPlanExecutionStarted` / `testPlanExecutionFinished` — the only hooks that bracket *all* tests across *all* engines. Used for baseline capture, final capture, pre-flight, and report writing.
-* `Extension` (JUnit Jupiter): engine-level, provides per-class and per-test boundaries (`BeforeAllCallback`, `BeforeEachCallback`, `AfterEachCallback`, `AfterAllCallback`). Used to drive the boundary snapshots.
-
-The two together give complete coverage: global suite boundaries via the listener, per-class and per-test boundaries via the extension.
+The Platform listener auto-loads via `META-INF/services` without any consumer-side configuration; the Jupiter `Extension` SPI requires `junit.jupiter.extensions.autodetection.enabled=true` to opt in. To keep the consumer footprint to a single Surefire `<dependencies>` entry, the listener is the only integration point. Per-class and per-test boundaries are derived from `executionStarted` / `executionFinished` events whose `TestIdentifier` is a Container with a `ClassSource` (class) or a Test with a `MethodSource` (method). The mapping was validated against plain `@Test`, `@ParameterizedTest`, `@TestFactory`, `@Nested`, `@RepeatedTest`, and `@TestInstance(PER_CLASS)`.
 
 **Why no scheduled polling?**
 
@@ -423,4 +413,4 @@ A resource that is allocated and released within a single test is not a leak by 
 
 ### Backlog
 
-**B1 — JFR-based thread creation attribution.** Capture creation-time stack traces for threads using JFR's `jdk.ThreadStart` event so each leaked thread can be reported with the line that created it. See B1 in `requirements.md` for details.
+(No backlog items at present. The previous JFR-based thread creation attribution item shipped — see [Thread Creation Attribution](#thread-creation-attribution-jfr) and REQ-7 in `requirements.md`.)

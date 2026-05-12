@@ -1,48 +1,39 @@
 # junit-leak-detector
 
-JUnit 5 extension that detects resource leaks in unit tests across multiple resource types: network ports, threads, system properties, environment variables, JVM heap memory, and DynamoDB Local tables.
+JUnit 5 listener that detects resource leaks in unit tests across multiple resource types: network ports, threads, system properties, environment variables, JVM heap memory, and DynamoDB Local tables.
 
-Auto-registers via `ServiceLoader` — consumers add the JAR as a `test`-scoped dependency, no `@ExtendWith` required. (For per-class lifecycle hooks, set `junit.jupiter.extensions.autodetection.enabled=true` in Surefire — see Consume below.)
+Auto-registers via `ServiceLoader` — consumers add a single Surefire-scoped dependency block. No top-level test-scope dep, no properties file, no JVM flags, no `@ExtendWith` annotations.
 
 For requirements and design, see [docs/requirements.md](docs/requirements.md) and [docs/design.md](docs/design.md).
 
-## Consume (inline mode)
+## Consume
 
-Add as a `test`-scoped dependency in your project's `pom.xml`:
-
-```xml
-<dependency>
-    <groupId>com.michaelsgroi.test</groupId>
-    <artifactId>junit-leak-detector</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
-    <scope>test</scope>
-</dependency>
-```
-
-Enable Jupiter extension auto-detection (required so the per-class lifecycle extension registers without `@ExtendWith`):
+Add a single `maven-surefire-plugin` block to your project's `pom.xml`:
 
 ```xml
 <plugin>
     <artifactId>maven-surefire-plugin</artifactId>
-    <configuration>
-        <systemPropertyVariables>
-            <junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled>
-            <resource.leak.detector.monitored.resource.types>ports,threads,systemprops,envvars,memory</resource.leak.detector.monitored.resource.types>
-        </systemPropertyVariables>
-    </configuration>
+    <dependencies>
+        <dependency>
+            <groupId>com.michaelsgroi.test</groupId>
+            <artifactId>junit-leak-detector</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+    </dependencies>
 </plugin>
 ```
 
-The JUnit Platform listener (which orchestrates the whole thing) auto-registers without any flag.
+That's it. The library JAR lives on Surefire's forked-test classpath only — it doesn't touch the project's main or test scope, doesn't bleed into IDE indexing, and doesn't appear in published artifacts. Defaults monitor `ports,threads,systemprops,envvars,memory`; DDB tables are opt-in via `monitored.resource.types`. To override defaults, add a `<configuration><systemPropertyVariables>` block inside the same plugin entry — see [Configuration](#configuration).
 
-For reliable detection of cross-class leaks, ensure `forkCount=1` and `reuseForks=true` in your Surefire config (these are the defaults). Otherwise multiple JVMs service the suite and sticky cross-class leaks become invisible — the detector emits a runtime WARN if it sees prior-fork markers from a sibling JVM.
+For thorough detection of cross-class leaks, run with `forkCount=1` and `reuseForks=true` (Surefire's defaults). Under multi-fork the detector still works correctly within each fork — leaks visible inside a single fork are detected and attributed normally — but leaks that would have spanned forks are invisible (false negative). The detector never produces false positives because of multi-fork.
 
-After `mvn test`, two files land in the configured output directory (default: the consuming module's working directory; configurable via `report.output.dir`):
+After `mvn test`, three files land in the configured output directory (default: `target/resource-leak-detector`):
 
-- `raw-report-<ISO-timestamp>.json` — JSON Lines machine-readable record, the contract between the library and the attribution module
+- `raw-report-<ISO-timestamp>.json` — JSON Lines machine-readable record
 - `leak-summary-<ISO-timestamp>.html` — human-readable summary, mirrors what's logged
+- `thread-creations-<ISO-timestamp>.jfr` — JFR recording of `jdk.ThreadStart` events; consumed by attribution to attach a creation stack to each leaked thread
 
-Both files share the same ISO-8601-seconds timestamp suffix so prior runs aren't overwritten. The library does not auto-open the HTML — running tests shouldn't open browser tabs as a side effect.
+All three share the same ISO-8601-seconds timestamp suffix so prior runs aren't overwritten. The library does not auto-open the HTML — running tests shouldn't open browser tabs as a side effect.
 
 ## Standalone attribution CLI
 
@@ -57,26 +48,42 @@ Writes `leak-summary-<ISO-timestamp>.html` next to the input raw report and open
 
 ## Configuration
 
-Library configuration is layered:
+Configuration is read exclusively from system properties of the form `resource.leak.detector.<key>`, set via Surefire's `<systemPropertyVariables>` block alongside the dependency injection. There is no properties-file mechanism — one config source, one location. Defaults are sensible so consumers who don't override anything get a working detector.
 
-1. **Properties file** — `resource-leak-detector.properties` on the test classpath (e.g., `src/test/resources/resource-leak-detector.properties`). The long-lived base config. Keys go in unprefixed: `monitored.resource.types=ports,threads`.
-2. **System properties** — `-Dresource.leak.detector.X=Y` on the CLI, or `<systemPropertyVariables>` in your Surefire config. These **override** the file value when set. Useful for per-invocation tweaks or per-profile scenario tests.
-3. **Built-in defaults** — apply when neither the file nor a system property is set.
+```xml
+<plugin>
+    <artifactId>maven-surefire-plugin</artifactId>
+    <dependencies>
+        <dependency>
+            <groupId>com.michaelsgroi.test</groupId>
+            <artifactId>junit-leak-detector</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+    </dependencies>
+    <configuration>
+        <systemPropertyVariables>
+            <resource.leak.detector.build.failure.resource.types>ports,threads</resource.leak.detector.build.failure.resource.types>
+            <resource.leak.detector.memory.growth.threshold.mb>100</resource.leak.detector.memory.growth.threshold.mb>
+        </systemPropertyVariables>
+    </configuration>
+</plugin>
+```
 
 | Property | What it controls | Default |
 |---|---|---|
-| `monitored.resource.types` | Comma-separated list of monitors to enable. Valid values: `ports`, `threads`, `systemprops`, `envvars`, `memory`, `ddbtables`. Empty = nothing monitored. | (empty) |
-| `memory.growth.threshold.mb` | Per-class heap growth (AFTER_ALL − BEFORE_ALL, in MB) before flagging a memory leak | `50` |
-| `build.failure.resource.types` | Comma-separated list of resource types whose leaks should fail the build (calls `System.exit(1)`). Empty = report only. | (empty) |
-| `snapshot.granularity` | `class` snapshots at `BeforeAll`/`AfterAll` only. `test` also snapshots at `BeforeEach`/`AfterEach` for fine-grained debugging at ~Nx more snapshot operations. | `class` |
-| `report.output.dir` | Directory where `raw-report-<ts>.json` and `leak-summary-<ts>.html` are written. | the JVM's working directory |
-| `preclass.settle.enabled` | Optional pre-class settle wait. Before each `BeforeAllCallback`, polls until threads/ports introduced by the previous class have released, sharpening attribution. | `false` |
+| `disabled` | Master kill switch. When `true`, the listener short-circuits at suite start; no marker files, no monitors, no snapshots, no report. | `false` |
+| `monitored.resource.types` | Comma-separated list of monitors to enable. Valid values: `ports`, `threads`, `systemprops`, `envvars`, `memory`, `ddbtables`. | `ports,threads,systemprops,envvars,memory` |
+| `memory.growth.threshold.mb` | Per-class heap growth (per-class-end − per-class-start, in MB) before flagging a memory leak. | `50` |
+| `build.failure.resource.types` | Comma-separated list of resource types whose leaks should fail the build. Empty = report only. | (empty) |
+| `snapshot.granularity` | `class` = per-class boundaries only. `test` = also per-test boundaries (parameterized invocations, dynamic tests, repeated tests, nested-class tests) for fine-grained debugging at ~Nx more snapshot operations. | `class` |
+| `report.output.dir` | Directory where `raw-report-<ts>.json`, `leak-summary-<ts>.html`, and `thread-creations-<ts>.jfr` are written. | `target/resource-leak-detector` |
+| `preclass.settle.enabled` | Optional pre-class settle wait. Before each per-class start boundary, polls until threads/ports introduced by the previous class have released, sharpening attribution. | `false` |
 | `preclass.settle.max.seconds` | Max time the settle wait will block. | `10` |
-| `preclass.settle.poll.interval.seconds` | Poll interval during the settle wait. | `1` |
+| `final.settle.max.seconds` | Max wait at the FINAL boundary for threads/ports to drain after suite-shared shutdown hooks fire. | `90` |
+| `thread.creation.tracking.enabled` | Capture `jdk.ThreadStart` events via JFR so attribution can show each leaked thread's creation stack. | `true` |
+| `thread.creation.stack.depth` | Stack depth captured per `jdk.ThreadStart` event. | `30` |
 
-Each property is read both unprefixed from the file and as `resource.leak.detector.<key>` from system properties.
-
-**Disabling the detector entirely:** comment out the dependency in your `pom.xml`. With the JAR off the classpath, no library code is loaded — zero overhead. There is intentionally no runtime master enable/disable flag.
+**Disabling the detector entirely:** set `resource.leak.detector.disabled=true` (keeps the dep on the classpath but turns the detector off), or remove the Surefire `<dependencies>` block (zero runtime cost).
 
 **Optional monitor dependencies:** `ddbtables` requires `software.amazon.awssdk:dynamodb` on the test classpath. If `ddbtables` is enabled but the AWS SDK is missing, the detector fails fast at startup with a clear error naming the missing dependency. Other monitors use only JDK APIs.
 
