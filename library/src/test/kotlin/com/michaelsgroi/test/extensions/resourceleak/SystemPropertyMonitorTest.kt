@@ -15,14 +15,24 @@ class SystemPropertyMonitorTest {
     }
 
     @Test
-    fun `snapshot returns all system properties`() {
-        val existingProperties = System.getProperties().stringPropertyNames()
+    fun `snapshot returns all system properties except always-ignored ones`() {
+        val existingProperties = System.getProperties().stringPropertyNames() - "jdk.jfr.repository"
         val resources = monitor.snapshot()
 
         assertEquals(existingProperties.size, resources.size)
         assertTrue(resources.all { it is ResourceId.PropertyId })
         existingProperties.forEach { propName ->
             assertTrue(resources.contains(ResourceId.PropertyId(propName)))
+        }
+    }
+
+    @Test
+    fun `snapshot always omits jfr repository property even when not configured`() {
+        try {
+            System.setProperty("jdk.jfr.repository", "/tmp/fake")
+            assertTrue(!monitor.snapshot().contains(ResourceId.PropertyId("jdk.jfr.repository")))
+        } finally {
+            System.clearProperty("jdk.jfr.repository")
         }
     }
 
