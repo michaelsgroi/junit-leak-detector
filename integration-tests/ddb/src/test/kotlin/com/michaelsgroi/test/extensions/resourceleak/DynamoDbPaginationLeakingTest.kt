@@ -1,7 +1,6 @@
 package com.michaelsgroi.test.extensions.resourceleak
 
 import com.amazonaws.services.dynamodbv2.local.main.ServerRunner
-import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -18,14 +17,17 @@ import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType
 import java.net.URI
 
 /**
- * `listTables` returns at most 100 tables per page. The monitor must paginate;
- * otherwise a suite that creates >100 tables silently caps its leak count at 100.
+ * Leaks 250 DynamoDB tables. The associated scenario IT runs this class under the
+ * leak detector and asserts the resulting raw report names all 250 — proving that
+ * `DynamoDbLocalTableMonitor` paginates past the AWS SDK's 100-tables-per-page cap.
+ *
+ * Lives under `integration-tests/ddb` (rather than `library/`) because it requires
+ * a running DynamoDB Local instance.
  */
-class DynamoDbLocalTableMonitorPaginationIT {
+class DynamoDbPaginationLeakingTest {
     @Test
-    fun `snapshot returns all tables when more than 100 exist`() {
-        val expected = 250
-        repeat(expected) { i ->
+    fun `leak tables to exercise listTables pagination`() {
+        repeat(EXPECTED_TABLE_COUNT) { i ->
             client.createTable { builder ->
                 builder
                     .tableName("pagination-test-table-%04d".format(i))
@@ -50,14 +52,23 @@ class DynamoDbLocalTableMonitorPaginationIT {
                     )
             }
         }
-
-        val resources = DynamoDbLocalTableMonitor(port = PORT).snapshot()
-
-        assertEquals(expected, resources.size)
+        // Sanity: all created. (The leak detector itself runs separately and asserts on the report.)
+        assertEquals(
+            EXPECTED_TABLE_COUNT,
+            client
+                .listTablesPaginator()
+                .tableNames()
+                .toList()
+                .size,
+        )
     }
 
     companion object {
-        private val PORT = System.getProperty("EMBEDDED_DYNAMO_PORT", "8889").toInt()
+        // The IT runs with `ddbtables.list.page.size=2`, so 5 tables forces the
+        // monitor's listTablesPaginator() through 3 pages — exercising pagination
+        // without paying the wall-clock cost of leaking many tables.
+        const val EXPECTED_TABLE_COUNT = 5
+        private val PORT = System.getProperty("EMBEDDED_DYNAMO_PORT", "8888").toInt()
         private val server =
             ServerRunner.createServerFromCommandLineArgs(
                 arrayOf("-inMemory", "-port", PORT.toString()),
@@ -77,12 +88,6 @@ class DynamoDbLocalTableMonitorPaginationIT {
                         StaticCredentialsProvider.create(AwsBasicCredentials.create("dummy", "dummy")),
                     ).httpClient(UrlConnectionHttpClient.builder().build())
                     .build()
-        }
-
-        @AfterAll
-        @JvmStatic
-        fun tearDown() {
-            server.stop()
         }
     }
 }

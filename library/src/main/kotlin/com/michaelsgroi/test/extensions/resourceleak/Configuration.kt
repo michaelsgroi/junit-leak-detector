@@ -33,7 +33,7 @@ class Configuration(
                 ?: SnapshotGranularity.CLASS
 
     val reportOutputDir: String
-        get() = read("report.output.dir") ?: "target/resource-leak-detector"
+        get() = read("report.output.dir") ?: System.getProperty("user.dir") ?: "."
 
     val preclassSettleEnabled: Boolean
         get() = read("preclass.settle.enabled")?.toBooleanStrictOrNull() ?: false
@@ -58,6 +58,12 @@ class Configuration(
      *  no-ops on JDKs without `jdk.jfr`. */
     val threadCreationTrackingEnabled: Boolean
         get() = read("thread.creation.tracking.enabled")?.toBooleanStrictOrNull() ?: true
+
+    /** Page size for `DynamoDbLocalTableMonitor`'s `listTables` calls. Unset = AWS SDK
+     *  default (100). Lower values are useful in tests to exercise pagination without
+     *  leaking many tables. */
+    val ddbtablesListPageSize: Int?
+        get() = read("ddbtables.list.page.size")?.toInt()
 
     /** Stack-frame depth captured per `jdk.ThreadStart` event. */
     val threadCreationStackDepth: Int

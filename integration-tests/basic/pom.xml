@@ -21,12 +21,6 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.michaelsgroi.test</groupId>
-            <artifactId>junit-leak-detector</artifactId>
-            <version>${leak-detector.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <version>${junit.version}</version>
@@ -69,9 +63,18 @@
                 <version>3.2.5</version>
                 <configuration>
                     <argLine>--add-opens java.base/java.lang=ALL-UNNAMED -Dnet.bytebuddy.experimental=true</argLine>
+                    <additionalClasspathDependencies>
+                        <dependency>
+                            <groupId>com.michaelsgroi.test</groupId>
+                            <artifactId>junit-leak-detector</artifactId>
+                            <version>${leak-detector.version}</version>
+                        </dependency>
+                    </additionalClasspathDependencies>
                     <systemPropertyVariables>
-                        <!-- Only overrides; everything else defaults (monitor everything,
-                             report.output.dir=target/resource-leak-detector, etc.). -->
+                        <!-- Override report.output.dir to a stable, predictable location so
+                             CliScenarioIT can locate the raw report deterministically. The
+                             library's default (user.dir) would put files alongside the pom. -->
+                        <resource.leak.detector.report.output.dir>target/resource-leak-detector</resource.leak.detector.report.output.dir>
                         <resource.leak.detector.memory.growth.threshold.mb>5</resource.leak.detector.memory.growth.threshold.mb>
                         <resource.leak.detector.thread.grace.period.seconds>0</resource.leak.detector.thread.grace.period.seconds>
                         <resource.leak.detector.final.settle.max.seconds>2</resource.leak.detector.final.settle.max.seconds>

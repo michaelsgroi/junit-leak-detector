@@ -51,7 +51,7 @@ class MonitorRegistry(
                             monitor = "ddbtables",
                             coordinate = "software.amazon.awssdk:dynamodb",
                         )
-                        discrete.add(DynamoDbLocalTableMonitor())
+                        discrete.add(DynamoDbLocalTableMonitor(pageSize = configuration.ddbtablesListPageSize))
                     }
                 }
             }

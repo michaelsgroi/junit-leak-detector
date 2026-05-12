@@ -29,12 +29,6 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.michaelsgroi.test</groupId>
-            <artifactId>junit-leak-detector</artifactId>
-            <version>${leak-detector.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>dynamodb</artifactId>
             <version>${aws.sdk.version}</version>
@@ -94,10 +88,22 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
                 <configuration>
+                    <additionalClasspathDependencies>
+                        <dependency>
+                            <groupId>com.michaelsgroi.test</groupId>
+                            <artifactId>junit-leak-detector</artifactId>
+                            <version>${leak-detector.version}</version>
+                        </dependency>
+                    </additionalClasspathDependencies>
                     <systemPropertyVariables>
-                        <!-- Only overrides; everything else defaults. -->
+                        <!-- Override report.output.dir to a stable location so scenario tests
+                             can locate the raw report deterministically. -->
+                        <resource.leak.detector.report.output.dir>target/resource-leak-detector</resource.leak.detector.report.output.dir>
                         <resource.leak.detector.monitored.resource.types>ddbtables</resource.leak.detector.monitored.resource.types>
                         <resource.leak.detector.final.settle.max.seconds>2</resource.leak.detector.final.settle.max.seconds>
+                        <!-- Force pagination at a tiny page size so the test exercises
+                             multi-page listTables behavior without leaking many tables. -->
+                        <resource.leak.detector.ddbtables.list.page.size>2</resource.leak.detector.ddbtables.list.page.size>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

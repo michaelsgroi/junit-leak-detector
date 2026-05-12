@@ -27,6 +27,7 @@ dynamodb-local-metadata.json
 raw-report-*.json
 leak-summary-*.html
 leak-summary-*.txt
+thread-creations-*.jfr
 forks/
 
 # Logs and temp files
