@@ -7,16 +7,17 @@ import java.time.Instant
 
 class RawReportJsonTest {
     @Test
-    fun `header encodes runId monitors and granularity`() {
+    fun `header encodes runId monitors granularity and memory threshold`() {
         val line =
             RawReportJson.encodeHeader(
                 runId = "abc",
                 startedAt = "2024-01-01T00:00:00Z",
                 monitors = listOf("threads", "ports"),
                 snapshotGranularity = "class",
+                memoryGrowthThresholdBytes = 52428800L,
             )
         assertEquals(
-            """{"type":"header","runId":"abc","startedAt":"2024-01-01T00:00:00Z","monitors":["threads","ports"],"snapshotGranularity":"class"}""",
+            """{"type":"header","runId":"abc","startedAt":"2024-01-01T00:00:00Z","monitors":["threads","ports"],"snapshotGranularity":"class","memoryGrowthThresholdBytes":"52428800"}""",
             line,
         )
     }

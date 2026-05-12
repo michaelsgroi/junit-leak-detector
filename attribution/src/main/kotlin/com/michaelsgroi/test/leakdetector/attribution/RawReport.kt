@@ -7,6 +7,9 @@ data class RawReportHeader(
     val startedAt: Instant,
     val monitors: List<String>,
     val snapshotGranularity: String,
+    /** Memory-growth threshold in effect for the run that produced this report. Used by
+     *  the standalone attribution CLI so the rendered HTML matches the inline report. */
+    val memoryGrowthThresholdBytes: Long = 0L,
 )
 
 data class RawReportFooter(

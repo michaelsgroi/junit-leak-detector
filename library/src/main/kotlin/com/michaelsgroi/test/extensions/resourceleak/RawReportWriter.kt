@@ -15,6 +15,7 @@ class RawReportWriter(
         startedAt: Instant,
         monitors: List<String>,
         snapshotGranularity: SnapshotGranularity,
+        memoryGrowthThresholdBytes: Long,
     ) {
         outputFile.parentFile?.mkdirs()
         val w = outputFile.bufferedWriter()
@@ -25,6 +26,7 @@ class RawReportWriter(
                 startedAt = startedAt.toString(),
                 monitors = monitors,
                 snapshotGranularity = snapshotGranularity.configValue,
+                memoryGrowthThresholdBytes = memoryGrowthThresholdBytes,
             ),
         )
         w.flush()

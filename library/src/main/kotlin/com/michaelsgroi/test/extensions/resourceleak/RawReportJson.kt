@@ -26,6 +26,7 @@ internal object RawReportJson {
         startedAt: String,
         monitors: List<String>,
         snapshotGranularity: String,
+        memoryGrowthThresholdBytes: Long,
     ): String =
         obj(
             "type" to str("header"),
@@ -33,6 +34,7 @@ internal object RawReportJson {
             "startedAt" to str(startedAt),
             "monitors" to array(monitors.map { str(it) }),
             "snapshotGranularity" to str(snapshotGranularity),
+            "memoryGrowthThresholdBytes" to str(memoryGrowthThresholdBytes.toString()),
         )
 
     fun encodeFooter(
