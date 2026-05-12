@@ -9,12 +9,16 @@ class DdbScenarioIT {
     private val module = "integration-tests/ddb"
 
     @Test
-    fun `report-only profile reports leaked DDB table without failing the build`() {
+    fun `report-only profile reports leaked DDB tables and exercises listTables pagination`() {
         val result = MavenScenarioRunner.run(module = module)
 
         assertTrue(result.succeeded, "expected BUILD SUCCESS, output tail:\n${result.output.takeLast(2000)}")
         assertTrue(result.containsLine("DynamoDB Table Leaks"))
-        assertTrue(result.containsLine("Table: leaked-by-DynamoDbTableLeakingTest"))
+        // Pagination payoff: the test leaks 5 tables with `ddbtables.list.page.size=2`,
+        // so seeing both the first-page (0000) and the last-page (0004) tables proves
+        // the monitor walked beyond the first page.
+        assertTrue(result.containsLine("Table: pagination-test-table-0000"))
+        assertTrue(result.containsLine("Table: pagination-test-table-0004"))
         assertFalse(result.containsLine("Build failure triggered"))
     }
 
@@ -24,7 +28,7 @@ class DdbScenarioIT {
 
         assertNotEquals(0, result.exitCode)
         assertTrue(result.containsLine("DynamoDB Table Leaks"))
-        assertTrue(result.containsLine("Table: leaked-by-DynamoDbTableLeakingTest"))
+        assertTrue(result.containsLine("Table: pagination-test-table-0000"))
         assertTrue(result.containsLine("Build failure triggered"))
     }
 }

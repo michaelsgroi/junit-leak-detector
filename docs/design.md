@@ -57,7 +57,7 @@ Auto-registration with JUnit means consumers do not need to modify test code:
 
 Configuration is supplied by the consuming project via Surefire `<systemPropertyVariables>` of the form `resource.leak.detector.<key>` (see [Configuration](#configuration)). The artifact contains no consumer-specific references.
 
-To fully disable the Resource Leak Detector at runtime without removing the dependency, set `resource.leak.detector.disabled=true`. To remove it entirely, omit the Surefire `<dependencies>` entry — with the JAR off the test classpath, ServiceLoader discovers nothing, no classes from the library are loaded, and no hooks fire.
+To fully disable the Resource Leak Detector at runtime without removing the dependency, set `resource.leak.detector.disabled=true`. To remove it entirely, omit the Surefire `<additionalClasspathDependencies>` entry — with the JAR off the test classpath, ServiceLoader discovers nothing, no classes from the library are loaded, and no hooks fire.
 
 ## Test-isolation Prerequisites
 
@@ -321,26 +321,37 @@ A consumer who doesn't want to override anything writes nothing; the built-in de
 ```xml
 <plugin>
     <artifactId>maven-surefire-plugin</artifactId>
-    <dependencies>
+    <configuration>
+        <additionalClasspathDependencies>
+            <dependency>
+                <groupId>com.michaelsgroi.test</groupId>
+                <artifactId>junit-leak-detector</artifactId>
+                <version>0.1.0-SNAPSHOT</version>
+            </dependency>
+        </additionalClasspathDependencies>
+    </configuration>
+</plugin>
+```
+
+Overrides live in the same `<configuration>` block:
+
+```xml
+<configuration>
+    <additionalClasspathDependencies>
         <dependency>
             <groupId>com.michaelsgroi.test</groupId>
             <artifactId>junit-leak-detector</artifactId>
             <version>0.1.0-SNAPSHOT</version>
         </dependency>
-    </dependencies>
-</plugin>
-```
-
-Overrides go in the same `<plugin>` block:
-
-```xml
-<configuration>
+    </additionalClasspathDependencies>
     <systemPropertyVariables>
         <resource.leak.detector.build.failure.resource.types>ports,threads</resource.leak.detector.build.failure.resource.types>
         <resource.leak.detector.memory.growth.threshold.mb>100</resource.leak.detector.memory.growth.threshold.mb>
     </systemPropertyVariables>
 </configuration>
 ```
+
+**Why `<additionalClasspathDependencies>` and not `<plugin><dependencies>`?** The `<plugin><dependencies>` element adds jars to Surefire's *plugin* classpath (the JVM running Surefire itself), not the *forked test* classpath where JUnit Platform's `Launcher` runs. The leak detector's `TestExecutionListener` lives on the test classpath; it's discovered by `Launcher` inside the forked JVM via `META-INF/services/org.junit.platform.launcher.TestExecutionListener`. Putting the jar on the plugin classpath alone means the listener never gets registered with the inner `Launcher`. `<additionalClasspathDependencies>` (Surefire 3.x) is the correct element for adding test-time deps without putting them on the project's compile/test scope.
 
 | Key | Default | Notes |
 |---|---|---|
@@ -356,7 +367,7 @@ Overrides go in the same `<plugin>` block:
 | `final.settle.max.seconds` | `90` | Maximum total time to wait at the FINAL boundary. |
 | `thread.creation.tracking.enabled` | `true` | When `true`, the listener captures `jdk.ThreadStart` events via JFR so attribution can show each leaked thread's creation stack. |
 | `thread.creation.stack.depth` | `30` | Stack depth captured per `jdk.ThreadStart` event. |
-| `report.output.dir` | `target/resource-leak-detector` | Directory where `raw-report-<ts>.json`, `leak-summary-<ts>.html`, and `thread-creations-<ts>.jfr` are written. All three files share the same ISO-8601-seconds timestamp suffix. |
+| `report.output.dir` | `user.dir` (the module where `mvn test` was invoked) | Directory where `raw-report-<ts>.json`, `leak-summary-<ts>.html`, and `thread-creations-<ts>.jfr` are written. All three files share the same ISO-8601-seconds timestamp suffix. |
 
 ## Appendix
 

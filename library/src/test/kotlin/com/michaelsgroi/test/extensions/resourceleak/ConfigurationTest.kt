@@ -14,7 +14,8 @@ class ConfigurationTest {
         assertEquals(50L, config.memoryGrowthThresholdMb)
         assertEquals("", config.buildFailureResourceTypes)
         assertEquals(SnapshotGranularity.CLASS, config.snapshotGranularity)
-        assertEquals("target/resource-leak-detector", config.reportOutputDir)
+        // Default is the JVM's current working directory (the module where mvn test was invoked).
+        assertEquals(System.getProperty("user.dir"), config.reportOutputDir)
         assertFalse(config.disabled)
     }
 
