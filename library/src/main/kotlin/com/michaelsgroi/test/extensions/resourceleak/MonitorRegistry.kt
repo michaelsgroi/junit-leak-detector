@@ -82,21 +82,10 @@ class MonitorRegistry(
         )
     }
 
-    /**
-     * Sample memory; if it grew past [thresholdBytes] vs [beforeAllBytes], force a GC and resample.
-     * Returns the (possibly post-GC) used-heap value, or `null` if the memory monitor is not active.
-     */
-    fun snapshotMemoryWithGcIfExceeds(
-        beforeAllBytes: Long,
-        thresholdBytes: Long,
-        testClass: String,
-    ): Long? {
-        val mem = numericMonitors.firstOrNull { it is MemoryMonitor } as? MemoryMonitor ?: return null
-        return mem.snapshotWithGcIfExceeds(beforeAllBytes, thresholdBytes, testClass).value
-    }
+    /** Force a GC and sample memory without recording or emitting a snapshot. */
+    fun probeMemoryAfterGc(): Long? = memoryMonitor()?.snapshotAfterGc()?.value
 
-    /** Sample memory without recording or emitting a snapshot. Used to capture per-class baselines. */
-    fun probeMemory(): Long? = (numericMonitors.firstOrNull { it is MemoryMonitor } as? MemoryMonitor)?.snapshot()?.value
+    fun memoryMonitor(): MemoryMonitor? = numericMonitors.firstOrNull { it is MemoryMonitor } as? MemoryMonitor
 
     private fun collectDiscrete(record: (ResourceType, Set<ResourceId>) -> Unit): Map<ResourceType, Set<ResourceId>> {
         val out = mutableMapOf<ResourceType, Set<ResourceId>>()

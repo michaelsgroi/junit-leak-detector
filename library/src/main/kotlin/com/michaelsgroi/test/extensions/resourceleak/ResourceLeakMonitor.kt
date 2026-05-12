@@ -32,7 +32,6 @@ class ResourceLeakMonitor(
     // Settle-wait state, scoped to one suite run (single listener instance per test plan).
     private var previousClassDelta: Map<ResourceType, Set<ResourceId>>? = null
     private var currentClassBeforeAllProbe: Map<ResourceType, Set<ResourceId>>? = null
-    private var currentClassBeforeAllMemory: Long? = null
 
     private var disabled: Boolean = false
 
@@ -122,20 +121,13 @@ class ResourceLeakMonitor(
         if (configuration.preclassSettleEnabled && r != null) {
             currentClassBeforeAllProbe = r.probeDiscrete(SETTLE_TYPES)
         }
+        r?.probeMemoryAfterGc()
         r?.snapshotAll(kind = SnapshotKind.BEFORE_ALL, testClass = testClassName)
-        currentClassBeforeAllMemory = r?.probeMemory()
     }
 
     private fun onClassEnd(testClassName: String) {
         val r = registry
-        currentClassBeforeAllMemory?.let { before ->
-            r?.snapshotMemoryWithGcIfExceeds(
-                beforeAllBytes = before,
-                thresholdBytes = configuration.memoryGrowthThresholdMb * BYTES_PER_MB,
-                testClass = testClassName,
-            )
-        }
-        currentClassBeforeAllMemory = null
+        r?.probeMemoryAfterGc()
         r?.snapshotAll(kind = SnapshotKind.AFTER_ALL, testClass = testClassName)
         resourceState.recordTestClassEnd(testClassName, clock.instant())
         if (configuration.preclassSettleEnabled && r != null) {
@@ -214,6 +206,13 @@ class ResourceLeakMonitor(
         }
 
         registry?.snapshotAll(kind = SnapshotKind.FINAL)
+        r?.memoryMonitor()?.let { mem ->
+            log.info(
+                "MemoryMonitor: total GC time {} ms across {} invocations",
+                mem.totalGcDuration.toMillis(),
+                mem.gcInvocationCount,
+            )
+        }
         // Stop JFR after FINAL snapshot so the recording captures every thread created
         // during the test plan up to (and including) leaks visible in the snapshot.
         threadCreationRecorder?.stopAndDump()
@@ -239,6 +238,5 @@ class ResourceLeakMonitor(
 
     companion object {
         private val SETTLE_TYPES = setOf(ResourceType.THREADS, ResourceType.PORTS)
-        private const val BYTES_PER_MB = 1024L * 1024L
     }
 }

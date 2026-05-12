@@ -18,31 +18,16 @@ class MemoryMonitorTest {
     }
 
     @Test
-    fun `snapshotWithGcIfExceeds skips GC when growth is below threshold`() {
+    fun `snapshotAfterGc invokes gc and records duration`() {
         val clock = TestClock(1000L)
         var gcCalls = 0
         val monitor = MemoryMonitor(clock = clock, gc = { gcCalls++ })
-        // Set the "before" arbitrarily close to current heap so growth is small;
-        // any positive baseline below current heap means delta is small.
-        monitor.snapshotWithGcIfExceeds(
-            beforeAllBytes = monitor.snapshot().value - 1,
-            thresholdBytes = Long.MAX_VALUE,
-            testClass = "com.Foo",
-        )
-        assertEquals(0, gcCalls)
-    }
 
-    @Test
-    fun `snapshotWithGcIfExceeds invokes GC when growth crosses threshold`() {
-        val clock = TestClock(1000L)
-        var gcCalls = 0
-        val monitor = MemoryMonitor(clock = clock, gc = { gcCalls++ })
-        // beforeAll=0 means current heap (>0) appears as massive growth.
-        monitor.snapshotWithGcIfExceeds(
-            beforeAllBytes = 0L,
-            thresholdBytes = 1L,
-            testClass = "com.Foo",
-        )
+        val measurement = monitor.snapshotAfterGc()
+
         assertEquals(1, gcCalls)
+        assertEquals(1L, monitor.gcInvocationCount)
+        assertTrue(measurement.value > 0)
+        assertTrue(monitor.totalGcDuration.toNanos() >= 0)
     }
 }
