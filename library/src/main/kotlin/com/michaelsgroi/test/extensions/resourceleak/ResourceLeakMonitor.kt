@@ -53,7 +53,6 @@ class ResourceLeakMonitor(
                 )
             reportPaths = paths
             paths.outputDir.mkdirs()
-            ForkDetector(markerDirectory = File(paths.outputDir, "forks")).checkAndRecordFork()
             val writer = RawReportWriter(paths.rawReport)
             rawReportWriter = writer
             val r = MonitorRegistry(rawReportWriter = writer)
