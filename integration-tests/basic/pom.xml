@@ -70,11 +70,11 @@
                 <configuration>
                     <argLine>--add-opens java.base/java.lang=ALL-UNNAMED -Dnet.bytebuddy.experimental=true</argLine>
                     <systemPropertyVariables>
-                        <!--
-                            Base detector config lives in src/test/resources/resource-leak-detector.properties.
-                            Profiles below override specific keys via system properties for scenario tests.
-                        -->
-                        <junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled>
+                        <!-- Only overrides; everything else defaults (monitor everything,
+                             report.output.dir=target/resource-leak-detector, etc.). -->
+                        <resource.leak.detector.memory.growth.threshold.mb>5</resource.leak.detector.memory.growth.threshold.mb>
+                        <resource.leak.detector.thread.grace.period.seconds>0</resource.leak.detector.thread.grace.period.seconds>
+                        <resource.leak.detector.final.settle.max.seconds>2</resource.leak.detector.final.settle.max.seconds>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
@@ -105,27 +105,6 @@
         </profile>
         <profile>
             <!--
-                Multi-fork scenario: configure Surefire to use multiple non-reused JVMs.
-                Run: mvn test -Pmulti-fork
-                Expected: BUILD SUCCESS; the runtime fork-detector logs a WARN about
-                "Multiple forks detected" because forkCount=2 with reuseForks=false means
-                each test class gets its own JVM, defeating cross-class leak detection.
-            -->
-            <id>multi-fork</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <artifactId>maven-surefire-plugin</artifactId>
-                        <configuration>
-                            <forkCount>2</forkCount>
-                            <reuseForks>false</reuseForks>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-        <profile>
-            <!--
                 Fail-fast scenario: enables `ddbtables` without adding the AWS SDK to the classpath.
                 The detector should fail at startup with a clear error naming the missing dep.
                 Run: mvn test -Pverify-failfast
@@ -138,7 +117,6 @@
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
                             <systemPropertyVariables>
-                                <junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled>
                                 <resource.leak.detector.monitored.resource.types>ddbtables</resource.leak.detector.monitored.resource.types>
                             </systemPropertyVariables>
                         </configuration>

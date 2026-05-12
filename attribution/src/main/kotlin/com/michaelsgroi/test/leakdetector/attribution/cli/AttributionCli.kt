@@ -5,6 +5,7 @@ import com.michaelsgroi.test.leakdetector.attribution.FinalReport
 import com.michaelsgroi.test.leakdetector.attribution.FinalReportRenderer
 import com.michaelsgroi.test.leakdetector.attribution.HtmlOpener
 import com.michaelsgroi.test.leakdetector.attribution.RawReportReader
+import com.michaelsgroi.test.leakdetector.attribution.ThreadCreationIndex
 import java.io.File
 import java.io.PrintStream
 import java.time.Instant
@@ -49,7 +50,26 @@ object AttributionCli {
 
     private fun buildReport(parsed: ParsedArgs): FinalReport {
         val report = RawReportReader.read(parsed.rawReport)
-        return Attribution.attributeSingleRun(report, parsed.memoryGrowthThresholdBytes)
+        // Auto-pair: derive `thread-creations-<ts>.jfr` from the raw report filename
+        // and load it if present. Missing/unparsable files yield ThreadCreationIndex.EMPTY.
+        val threadCreations =
+            autoPairedJfr(parsed.rawReport)
+                ?.let { ThreadCreationIndex.parse(it) }
+                ?: ThreadCreationIndex.EMPTY
+        return Attribution.attributeSingleRun(
+            report = report,
+            memoryGrowthThresholdBytes = parsed.memoryGrowthThresholdBytes,
+            threadCreationIndex = threadCreations,
+        )
+    }
+
+    /** Derives the paired JFR path from `raw-report-<ts>.json` → `thread-creations-<ts>.jfr`. */
+    private fun autoPairedJfr(rawReport: File): File? {
+        val name = rawReport.name
+        if (!name.startsWith("raw-report-") || !name.endsWith(".json")) return null
+        val ts = name.removePrefix("raw-report-").removeSuffix(".json")
+        val candidate = File(rawReport.parentFile ?: File("."), "thread-creations-$ts.jfr")
+        return if (candidate.isFile) candidate else null
     }
 
     private fun parseArgs(
@@ -117,6 +137,9 @@ object AttributionCli {
             attributed leak summary as `leak-summary-<ISO-timestamp>.html` next to
             the input raw report; the file is opened in the default browser
             (suppress with JUNIT_LEAK_DETECTOR_NO_OPEN=1).
+
+            If a `thread-creations-<ts>.jfr` file sits next to the raw report (paired by
+            timestamp), thread leaks include the creation stack of each leaked thread.
 
             Options:
               --memory-threshold-mb <n>     Memory growth threshold in MB (default: 0)

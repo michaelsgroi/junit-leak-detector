@@ -95,11 +95,9 @@
                 <version>3.2.5</version>
                 <configuration>
                     <systemPropertyVariables>
-                        <!--
-                            Base detector config lives in src/test/resources/resource-leak-detector.properties.
-                            The build-failure profile overrides build.failure.resource.types via system property.
-                        -->
-                        <junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled>
+                        <!-- Only overrides; everything else defaults. -->
+                        <resource.leak.detector.monitored.resource.types>ddbtables</resource.leak.detector.monitored.resource.types>
+                        <resource.leak.detector.final.settle.max.seconds>2</resource.leak.detector.final.settle.max.seconds>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

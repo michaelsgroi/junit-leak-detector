@@ -1,23 +1,21 @@
 package com.michaelsgroi.test.extensions.resourceleak
 
-import java.util.Properties
-
 /**
- * Configuration values for the resource leak detector. Loaded at startup from
- * `resource-leak-detector.properties` on the test classpath, with system property
- * overrides of the form `resource.leak.detector.<key>`. If the file is absent or
- * a key is missing, built-in defaults apply.
+ * Configuration values for the resource leak detector. Read exclusively from system
+ * properties of the form `resource.leak.detector.<key>` — typically set via Surefire's
+ * `<systemPropertyVariables>` block alongside the dependency injection. Each key has a
+ * built-in default; consumers who don't want to override anything write nothing.
  *
- * Visible-for-test: pass a custom loader to override file/system property lookup.
+ * Visible-for-test: pass a custom [systemPropertyLookup] to override.
  */
 class Configuration(
-    propertiesLoader: () -> Properties? = ::loadFromClasspath,
     private val systemPropertyLookup: (String) -> String? = System::getProperty,
 ) {
-    private val fileProperties: Properties = propertiesLoader() ?: Properties()
+    val disabled: Boolean
+        get() = read("disabled")?.toBooleanStrictOrNull() ?: false
 
     val monitoredResourceTypes: String
-        get() = read("monitored.resource.types") ?: ""
+        get() = read("monitored.resource.types") ?: DEFAULT_MONITORED_RESOURCE_TYPES
 
     val threadGracePeriodSeconds: Long
         get() = read("thread.grace.period.seconds")?.toLong() ?: 10L
@@ -35,7 +33,7 @@ class Configuration(
                 ?: SnapshotGranularity.CLASS
 
     val reportOutputDir: String
-        get() = read("report.output.dir") ?: System.getProperty("user.dir") ?: "."
+        get() = read("report.output.dir") ?: "target/resource-leak-detector"
 
     val preclassSettleEnabled: Boolean
         get() = read("preclass.settle.enabled")?.toBooleanStrictOrNull() ?: false
@@ -54,6 +52,16 @@ class Configuration(
 
     val finalSettlePollIntervalSeconds: Long
         get() = read("final.settle.poll.interval.seconds")?.toLong() ?: 1L
+
+    /** When `true`, the listener starts a JFR recording capturing `jdk.ThreadStart`
+     *  events so attribution can show each leaked thread's creation stack. Silently
+     *  no-ops on JDKs without `jdk.jfr`. */
+    val threadCreationTrackingEnabled: Boolean
+        get() = read("thread.creation.tracking.enabled")?.toBooleanStrictOrNull() ?: true
+
+    /** Stack-frame depth captured per `jdk.ThreadStart` event. */
+    val threadCreationStackDepth: Int
+        get() = read("thread.creation.stack.depth")?.toInt() ?: 30
 
     /**
      * Comma-separated list of system property names to exclude from leak detection. Useful for
@@ -86,20 +94,16 @@ class Configuration(
                 ?: emptyList()
 
     private fun read(key: String): String? {
-        val systemValue = systemPropertyLookup(SYSTEM_PROPERTY_PREFIX + key)
-        if (!systemValue.isNullOrBlank()) {
-            return systemValue
-        }
-        val fileValue = fileProperties.getProperty(key)
-        if (!fileValue.isNullOrBlank()) {
-            return fileValue
-        }
-        return null
+        val value = systemPropertyLookup(SYSTEM_PROPERTY_PREFIX + key)
+        return if (value.isNullOrBlank()) null else value
     }
 
     companion object {
-        const val PROPERTIES_FILE_NAME = "resource-leak-detector.properties"
         const val SYSTEM_PROPERTY_PREFIX = "resource.leak.detector."
+
+        /** Default monitored resource types when the config key is unset. DDB tables omitted —
+         *  it requires the AWS SDK on the test classpath, so it's opt-in. */
+        const val DEFAULT_MONITORED_RESOURCE_TYPES = "ports,threads,systemprops,envvars,memory"
 
         @Volatile
         private var sharedInstance: Configuration? = null
@@ -110,13 +114,5 @@ class Configuration(
                 sharedInstance ?: synchronized(this) {
                     sharedInstance ?: Configuration().also { sharedInstance = it }
                 }
-
-        private fun loadFromClasspath(): Properties? {
-            val classLoader =
-                Thread.currentThread().contextClassLoader
-                    ?: Configuration::class.java.classLoader
-            val stream = classLoader.getResourceAsStream(PROPERTIES_FILE_NAME) ?: return null
-            return stream.use { Properties().apply { load(it) } }
-        }
     }
 }

@@ -7,7 +7,6 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.nio.file.Path
 import java.time.Instant
-import java.util.Properties
 
 class AttributionRunnerTest {
     private val timestamp = "2024-01-01T00-00-00Z"
@@ -17,13 +16,13 @@ class AttributionRunnerTest {
         buildFailureTypes: String = "",
         memoryThresholdMb: Long = 0L,
     ): Configuration {
-        val props =
-            Properties().apply {
-                setProperty("monitored.resource.types", monitored)
-                setProperty("build.failure.resource.types", buildFailureTypes)
-                setProperty("memory.growth.threshold.mb", memoryThresholdMb.toString())
-            }
-        return Configuration(propertiesLoader = { props }, systemPropertyLookup = { null })
+        val sys =
+            mapOf(
+                "resource.leak.detector.monitored.resource.types" to monitored,
+                "resource.leak.detector.build.failure.resource.types" to buildFailureTypes,
+                "resource.leak.detector.memory.growth.threshold.mb" to memoryThresholdMb.toString(),
+            )
+        return Configuration(systemPropertyLookup = { sys[it] })
     }
 
     private fun reportPaths(outputDir: File): ReportPaths = ReportPaths(outputDir, timestamp)

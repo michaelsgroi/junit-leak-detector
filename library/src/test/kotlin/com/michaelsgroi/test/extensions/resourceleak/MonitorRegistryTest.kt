@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import java.util.Properties
 
 class MonitorRegistryTest {
     @AfterEach
@@ -17,8 +16,8 @@ class MonitorRegistryTest {
     }
 
     private fun configWith(monitoredTypes: String): Configuration {
-        val props = Properties().apply { setProperty("monitored.resource.types", monitoredTypes) }
-        return Configuration(propertiesLoader = { props }, systemPropertyLookup = { null })
+        val sys = mapOf("resource.leak.detector.monitored.resource.types" to monitoredTypes)
+        return Configuration(systemPropertyLookup = { sys[it] })
     }
 
     @Test
@@ -133,12 +132,15 @@ class MonitorRegistryTest {
     }
 
     @Test
-    fun `hasAny returns false when no resource types configured`() {
+    fun `hasAny returns false when monitored types contains only unknown values`() {
+        // Unknown ResourceType values are silently dropped by MonitorRegistry init, so
+        // a config of `unknown` (a non-blank, non-default-triggering value) yields zero
+        // monitors and `hasAny()` returns false.
         val registry =
             MonitorRegistry(
                 ResourceState(),
                 TestClock(0L),
-                configuration = configWith(""),
+                configuration = configWith("unknown"),
             )
         assertEquals(false, registry.hasAny())
     }

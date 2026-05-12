@@ -18,12 +18,19 @@ class AttributionTest {
         testClass: String? = null,
         ports: Set<Int> = emptySet(),
         memory: Long? = null,
+        threads: Set<Pair<String, Long>> = emptySet(),
     ) = RawSnapshot(
         kind = kind,
         timestamp = ts,
         testClass = testClass,
         testMethod = null,
-        discrete = if (ports.isEmpty()) emptyMap() else mapOf("ports" to ports.map { DiscreteResource.Port(it) }),
+        discrete =
+            buildMap {
+                if (ports.isNotEmpty()) put("ports", ports.map { DiscreteResource.Port(it) })
+                if (threads.isNotEmpty()) {
+                    put("threads", threads.map { (n, id) -> DiscreteResource.ThreadResource(n, id.toString()) })
+                }
+            },
         numeric = if (memory != null) mapOf("memory" to NumericMeasurement(memory, ts)) else emptyMap(),
     )
 
@@ -201,5 +208,78 @@ class AttributionTest {
             }
         assertTrue(ex.message!!.contains("BASELINE"))
         assertNull(null) // satisfies unused import warning safety
+    }
+
+    @Test
+    fun `thread leak gets creation stack attached when present in the JFR index`() {
+        val snapshots =
+            listOf(
+                snapshot("BASELINE", t(0)),
+                snapshot("BEFORE_ALL", t(1), testClass = "com.A"),
+                snapshot("AFTER_ALL", t(2), testClass = "com.A", threads = setOf("worker" to 42L)),
+                snapshot("FINAL", t(3), threads = setOf("worker" to 42L)),
+            )
+        val index =
+            ThreadCreationIndex.ofEntries(
+                mapOf(
+                    ("worker" to 42L) to listOf("com.foo.Pool.<init>(Pool.kt:10)", "com.foo.MyTest.setUp(MyTest.kt:5)"),
+                ),
+            )
+
+        val result =
+            Attribution.attributeSingleRun(
+                report = reportWith(snapshots, listOf(TestClassLifecycleRecord("com.A", t(1), t(2)))),
+                threadCreationIndex = index,
+            )
+
+        val leak = result.discreteLeaks.single()
+        assertEquals("threads", leak.resourceType)
+        assertEquals(
+            listOf("com.foo.Pool.<init>(Pool.kt:10)", "com.foo.MyTest.setUp(MyTest.kt:5)"),
+            leak.creationStack,
+        )
+    }
+
+    @Test
+    fun `thread leak with no JFR match has null creation stack`() {
+        val snapshots =
+            listOf(
+                snapshot("BASELINE", t(0)),
+                snapshot("BEFORE_ALL", t(1), testClass = "com.A"),
+                snapshot("AFTER_ALL", t(2), testClass = "com.A", threads = setOf("worker" to 99L)),
+                snapshot("FINAL", t(3), threads = setOf("worker" to 99L)),
+            )
+
+        val result =
+            Attribution.attributeSingleRun(
+                report = reportWith(snapshots, listOf(TestClassLifecycleRecord("com.A", t(1), t(2)))),
+                threadCreationIndex = ThreadCreationIndex.ofEntries(emptyMap()),
+            )
+
+        assertNull(result.discreteLeaks.single().creationStack)
+    }
+
+    @Test
+    fun `non-thread leaks never get creation stack even when index has entries`() {
+        val snapshots =
+            listOf(
+                snapshot("BASELINE", t(0)),
+                snapshot("BEFORE_ALL", t(1), testClass = "com.A"),
+                snapshot("AFTER_ALL", t(2), testClass = "com.A", ports = setOf(8080)),
+                snapshot("FINAL", t(3), ports = setOf(8080)),
+            )
+        val index =
+            ThreadCreationIndex.ofEntries(
+                mapOf(("anything" to 0L) to listOf("frame")),
+            )
+
+        val result =
+            Attribution.attributeSingleRun(
+                report = reportWith(snapshots, listOf(TestClassLifecycleRecord("com.A", t(1), t(2)))),
+                threadCreationIndex = index,
+            )
+
+        assertEquals("ports", result.discreteLeaks.single().resourceType)
+        assertNull(result.discreteLeaks.single().creationStack)
     }
 }

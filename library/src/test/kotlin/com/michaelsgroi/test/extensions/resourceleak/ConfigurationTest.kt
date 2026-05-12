@@ -1,87 +1,66 @@
 package com.michaelsgroi.test.extensions.resourceleak
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import java.util.Properties
 
 class ConfigurationTest {
     @Test
-    fun `defaults apply when neither file nor system property is set`() {
-        val config = Configuration(propertiesLoader = { null }, systemPropertyLookup = { null })
-        assertEquals("", config.monitoredResourceTypes)
+    fun `defaults apply when no system property is set`() {
+        val config = Configuration(systemPropertyLookup = { null })
+        assertEquals(Configuration.DEFAULT_MONITORED_RESOURCE_TYPES, config.monitoredResourceTypes)
         assertEquals(10L, config.threadGracePeriodSeconds)
         assertEquals(50L, config.memoryGrowthThresholdMb)
         assertEquals("", config.buildFailureResourceTypes)
         assertEquals(SnapshotGranularity.CLASS, config.snapshotGranularity)
+        assertEquals("target/resource-leak-detector", config.reportOutputDir)
+        assertFalse(config.disabled)
     }
 
     @Test
-    fun `snapshot granularity reads from properties`() {
-        val props = Properties().apply { setProperty("snapshot.granularity", "test") }
-        val config = Configuration(propertiesLoader = { props }, systemPropertyLookup = { null })
+    fun `system property overrides default`() {
+        val sys = mapOf("resource.leak.detector.monitored.resource.types" to "ports,threads")
+        val config = Configuration(systemPropertyLookup = { sys[it] })
+        assertEquals("ports,threads", config.monitoredResourceTypes)
+    }
+
+    @Test
+    fun `snapshot granularity reads from system property`() {
+        val sys = mapOf("resource.leak.detector.snapshot.granularity" to "test")
+        val config = Configuration(systemPropertyLookup = { sys[it] })
         assertEquals(SnapshotGranularity.TEST, config.snapshotGranularity)
     }
 
     @Test
     fun `snapshot granularity falls back to default for unknown value`() {
-        val props = Properties().apply { setProperty("snapshot.granularity", "garbage") }
-        val config = Configuration(propertiesLoader = { props }, systemPropertyLookup = { null })
+        val sys = mapOf("resource.leak.detector.snapshot.granularity" to "garbage")
+        val config = Configuration(systemPropertyLookup = { sys[it] })
         assertEquals(SnapshotGranularity.CLASS, config.snapshotGranularity)
     }
 
     @Test
-    fun `properties file values are used when present`() {
-        val props =
-            Properties().apply {
-                setProperty("monitored.resource.types", "ports,threads")
-                setProperty("thread.grace.period.seconds", "5")
-                setProperty("memory.growth.threshold.mb", "50")
-                setProperty("build.failure.resource.types", "memory")
-            }
-        val config = Configuration(propertiesLoader = { props }, systemPropertyLookup = { null })
-        assertEquals("ports,threads", config.monitoredResourceTypes)
-        assertEquals(5L, config.threadGracePeriodSeconds)
-        assertEquals(50L, config.memoryGrowthThresholdMb)
-        assertEquals("memory", config.buildFailureResourceTypes)
+    fun `blank system property is treated as unset`() {
+        val config = Configuration(systemPropertyLookup = { "" })
+        assertEquals(10L, config.threadGracePeriodSeconds)
     }
 
     @Test
-    fun `system property overrides file value`() {
-        val props = Properties().apply { setProperty("monitored.resource.types", "ports") }
-        val systemProps =
-            mapOf(
-                "resource.leak.detector.monitored.resource.types" to "threads,memory",
-            )
-        val config =
+    fun `disabled flag reads boolean strictly`() {
+        assertTrue(
             Configuration(
-                propertiesLoader = { props },
-                systemPropertyLookup = { systemProps[it] },
-            )
-        assertEquals("threads,memory", config.monitoredResourceTypes)
-    }
-
-    @Test
-    fun `blank system property does not override file value`() {
-        val props = Properties().apply { setProperty("thread.grace.period.seconds", "7") }
-        val config =
+                systemPropertyLookup = { mapOf("resource.leak.detector.disabled" to "true")[it] },
+            ).disabled,
+        )
+        assertFalse(
             Configuration(
-                propertiesLoader = { props },
-                systemPropertyLookup = { "" },
-            )
-        assertEquals(7L, config.threadGracePeriodSeconds)
-    }
-
-    @Test
-    fun `system property used when file absent`() {
-        val systemProps =
-            mapOf(
-                "resource.leak.detector.thread.grace.period.seconds" to "30",
-            )
-        val config =
+                systemPropertyLookup = { mapOf("resource.leak.detector.disabled" to "false")[it] },
+            ).disabled,
+        )
+        assertFalse(
             Configuration(
-                propertiesLoader = { null },
-                systemPropertyLookup = { systemProps[it] },
-            )
-        assertEquals(30L, config.threadGracePeriodSeconds)
+                systemPropertyLookup = { mapOf("resource.leak.detector.disabled" to "garbage")[it] },
+            ).disabled,
+        )
     }
 }
