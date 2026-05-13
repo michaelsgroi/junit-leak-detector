@@ -33,6 +33,13 @@ class ResourceLeakMonitor(
     private var previousClassDelta: Map<ResourceType, Set<ResourceId>>? = null
     private var currentClassBeforeAllProbe: Map<ResourceType, Set<ResourceId>>? = null
 
+    // The previous test class whose AFTER_ALL has not yet been emitted. We defer AFTER_ALL
+    // emission to the start of the *next* test class so that JUnit has fully unrooted the
+    // previous test instance — otherwise the forced GC at AFTER_ALL can't reclaim its
+    // fields, inflating the per-class memory delta with transient instance state. See
+    // [onClassStart] / [testPlanExecutionFinished] for where the deferred AFTER_ALL fires.
+    private var previousClassName: String? = null
+
     private var disabled: Boolean = false
 
     override fun testPlanExecutionStarted(testPlan: TestPlan) {
@@ -118,6 +125,17 @@ class ResourceLeakMonitor(
                 settleWaiter.waitForSettle(delta) { types -> r.probeDiscrete(types) }
             }
         }
+        // Force GC and emit the previous class's deferred AFTER_ALL *before* this class
+        // starts allocating. By now JUnit has unrooted the previous test instance, so the
+        // GC actually reclaims its fields — unlike a same-thread AFTER_ALL where the stack
+        // still holds the instance.
+        if (r != null) {
+            previousClassName?.let { prev ->
+                r.probeMemoryAfterGc()
+                r.snapshotAll(kind = SnapshotKind.AFTER_ALL, testClass = prev)
+                previousClassName = null
+            }
+        }
         resourceState.recordTestClassStart(testClassName, clock.instant())
         if (configuration.preclassSettleEnabled && r != null) {
             currentClassBeforeAllProbe = r.probeDiscrete(SETTLE_TYPES)
@@ -128,8 +146,11 @@ class ResourceLeakMonitor(
 
     private fun onClassEnd(testClassName: String) {
         val r = registry
-        r?.probeMemoryAfterGc()
-        r?.snapshotAll(kind = SnapshotKind.AFTER_ALL, testClass = testClassName)
+        // Defer AFTER_ALL emission to the next class's onClassStart (or to
+        // testPlanExecutionFinished if this is the last class). At this point JUnit's
+        // call stack still holds this test instance, so a forced GC here can't reclaim
+        // its fields. By the time the next class starts the instance is unrooted.
+        previousClassName = testClassName
         resourceState.recordTestClassEnd(testClassName, clock.instant())
         if (configuration.preclassSettleEnabled && r != null) {
             val before = currentClassBeforeAllProbe ?: emptyMap()
@@ -186,6 +207,17 @@ class ResourceLeakMonitor(
     override fun testPlanExecutionFinished(testPlan: TestPlan) {
         if (disabled) return
         val r = registry
+
+        // Emit the deferred AFTER_ALL for the last test class. By suite-end JUnit has
+        // released the previous test instance, so the forced GC here reflects retained
+        // memory rather than transient instance state still on JUnit's stack.
+        if (r != null) {
+            previousClassName?.let { prev ->
+                r.probeMemoryAfterGc()
+                r.snapshotAll(kind = SnapshotKind.AFTER_ALL, testClass = prev)
+                previousClassName = null
+            }
+        }
 
         // Run suite-shared shutdown hooks (e.g., SpringContextShutdownHook) so threads
         // and ports owned by cached infrastructure get released before the FINAL
